@@ -1,0 +1,32 @@
+"""Big Five → PAD baseline conversion."""
+
+from pneuma_core.models.personality import Personality
+
+
+def _clamp(value: float, low: float = -1.0, high: float = 1.0) -> float:
+    return max(low, min(high, value))
+
+
+def personality_to_pad_baseline(personality: Personality) -> tuple[float, float, float]:
+    """Big Five 性格パラメータから PAD ベースラインを計算.
+
+    P_baseline = 0.21×E + 0.59×A + 0.19×(1-N)
+    A_baseline = 0.15×O + 0.30×(1-A) + 0.57×N
+    D_baseline = 0.25×O + 0.17×C + 0.60×E - 0.32×A
+
+    戻り値は [-1.0, 1.0] にクランプされる。
+
+    Returns:
+        (pleasure, arousal, dominance) のタプル
+    """
+    e = personality.extraversion
+    a = personality.agreeableness
+    n = personality.neuroticism
+    o = personality.openness
+    c = personality.conscientiousness
+
+    pleasure = 0.21 * e + 0.59 * a + 0.19 * (1 - n)
+    arousal = 0.15 * o + 0.30 * (1 - a) + 0.57 * n
+    dominance = 0.25 * o + 0.17 * c + 0.60 * e - 0.32 * a
+
+    return (_clamp(pleasure), _clamp(arousal), _clamp(dominance))
