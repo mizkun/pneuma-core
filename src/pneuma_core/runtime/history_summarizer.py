@@ -31,7 +31,8 @@ class HistorySummarizer:
     """Summarizes overflow conversation history using LLM.
 
     When conversation history exceeds the limit, the overflow messages
-    are summarized and the summary is prepended as a system message.
+    are summarized. The summary text is returned separately from the
+    trimmed messages so callers can include it in system_prompt.
     """
 
     def __init__(self, llm: LLMAdapter) -> None:

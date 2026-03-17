@@ -244,7 +244,7 @@ class RuntimeEngine:
         effective_system_prompt = system_prompt
         if self._conversation_summary is not None:
             effective_system_prompt = (
-                f"{system_prompt}\n\n## 会話サマリ\n{self._conversation_summary}"
+                f"{system_prompt}\n\n{self._conversation_summary}"
             )
 
         llm_succeeded = False
