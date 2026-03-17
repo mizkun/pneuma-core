@@ -240,13 +240,20 @@ class RuntimeEngine:
         await self._trim_history()
 
         # 5. Generate LLM response
+        # Append conversation summary to system_prompt (not in messages)
+        effective_system_prompt = system_prompt
+        if self._conversation_summary is not None:
+            effective_system_prompt = (
+                f"{system_prompt}\n\n{self._conversation_summary}"
+            )
+
         llm_succeeded = False
         response = None
         structured: StructuredResponse | None = None
         try:
             response = await self._llm.generate(
                 LLMRequest(
-                    system_prompt=system_prompt,
+                    system_prompt=effective_system_prompt,
                     messages=self._build_messages_for_llm(),
                     model=self._response_model,
                     system_prompt_cached=_cached_section,
@@ -476,15 +483,8 @@ class RuntimeEngine:
 要約を日本語の箇条書きで出力してください。"""
 
     def _build_messages_for_llm(self) -> list[dict]:
-        """Build message list for LLM, prepending summary if available."""
-        messages = list(self._history)
-        if self._conversation_summary is not None:
-            summary_msg = {
-                "role": "system",
-                "content": self._conversation_summary,
-            }
-            messages.insert(0, summary_msg)
-        return messages
+        """Build message list for LLM (no system role in messages)."""
+        return list(self._history)
 
     async def _summarize_old_messages(self, messages_to_summarize: list[dict]) -> None:
         """Summarize old messages using Haiku and store as conversation summary."""

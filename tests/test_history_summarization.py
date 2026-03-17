@@ -180,8 +180,8 @@ class TestHistorySummarization:
         assert engine._conversation_summary is not None
 
     @pytest.mark.asyncio
-    async def test_summary_included_in_history_as_system_message(self) -> None:
-        """要約は履歴の先頭にシステムメッセージとして含まれる."""
+    async def test_summary_included_in_system_prompt(self) -> None:
+        """要約は system_prompt に含まれる（messages 配列には system ロールを入れない）."""
         storage, llm, embedding, memory_store = _setup_mocks()
 
         summary_text = "[これまでの会話の要約]\n- 挨拶を交わした"
@@ -208,7 +208,7 @@ class TestHistorySummarization:
                 _make_message_input(content=f"メッセージ{i}")
             )
 
-        # Check that the messages sent to LLM include summary as first message
+        # Check that summary is in system_prompt, NOT in messages
         last_main_call = None
         for c in llm.generate.call_args_list:
             req = c[0][0]
@@ -217,9 +217,13 @@ class TestHistorySummarization:
 
         assert last_main_call is not None
         request = last_main_call[0][0]
-        # First message should be the summary
-        assert request.messages[0]["role"] == "system"
-        assert "[これまでの会話の要約]" in request.messages[0]["content"]
+        # Summary should be in system_prompt
+        assert "[これまでの会話の要約]" in request.system_prompt
+        # Messages should NOT contain system role
+        for m in request.messages:
+            assert m["role"] != "system", (
+                f"messages 配列に system ロールが含まれている: {m}"
+            )
 
     @pytest.mark.asyncio
     async def test_history_stays_within_limit_after_summarization(self) -> None:
@@ -505,17 +509,17 @@ class TestHistorySummarizationPipeline:
         assert engine._conversation_summary is not None
 
     @pytest.mark.asyncio
-    async def test_pipeline_messages_sent_to_llm_include_summary(self) -> None:
-        """LLM に送信されるメッセージリストに要約が含まれる."""
+    async def test_pipeline_summary_in_system_prompt_not_messages(self) -> None:
+        """要約は system_prompt に含まれ、messages 配列には system ロールが含まれない."""
         storage, llm, embedding, memory_store = _setup_mocks()
 
         summary_text = "[これまでの会話の要約]\n- 天気の話をした\n- 週末の予定を聞いた"
-        main_call_messages = []
+        main_call_requests = []
 
         async def mock_generate(request):
             if request.model == "claude-haiku-4-5-20251001":
                 return _make_summary_response(summary_text)
-            main_call_messages.append(request.messages[:])
+            main_call_requests.append(request)
             return _make_llm_response("応答")
 
         llm.generate = AsyncMock(side_effect=mock_generate)
@@ -535,15 +539,17 @@ class TestHistorySummarizationPipeline:
                 _make_message_input(content=f"メッセージ{i}")
             )
 
-        # After summarization, LLM calls should include summary in messages
-        # Find a main call that was made after summarization
-        found_summary_in_messages = False
-        for msgs in main_call_messages:
-            for m in msgs:
-                if m.get("role") == "system" and "これまでの会話の要約" in m.get("content", ""):
-                    found_summary_in_messages = True
-                    break
+        # After summarization, system_prompt should contain summary
+        found_summary_in_system_prompt = False
+        for req in main_call_requests:
+            if "これまでの会話の要約" in req.system_prompt:
+                found_summary_in_system_prompt = True
+            # Messages should NEVER contain system role
+            for m in req.messages:
+                assert m["role"] != "system", (
+                    f"messages 配列に system ロールが含まれている: {m}"
+                )
 
-        assert found_summary_in_messages, (
-            "要約がLLMに送信されるメッセージリストに含まれていない"
+        assert found_summary_in_system_prompt, (
+            "要約が system_prompt に含まれていない"
         )

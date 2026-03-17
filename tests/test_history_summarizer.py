@@ -233,8 +233,8 @@ class TestHistorySummarizerTrimWithSummary:
     """trim_with_summary: 要約付きのトリミングテスト."""
 
     @pytest.mark.asyncio
-    async def test_trim_returns_summary_plus_recent(self) -> None:
-        """要約が先頭に挿入され、直近メッセージが保持される."""
+    async def test_trim_returns_summary_and_recent(self) -> None:
+        """要約テキストと直近メッセージが返される（system ロールは含まない）."""
         from pneuma_core.runtime.history_summarizer import HistorySummarizer
 
         llm = AsyncMock()
@@ -252,17 +252,22 @@ class TestHistorySummarizerTrimWithSummary:
 
         result = await summarizer.trim_with_summary(history, limit=30)
 
-        # 結果は limit + 1 以下（要約メッセージ + 直近 limit 件）
-        assert len(result) <= 31
-        # 先頭は要約メッセージ
-        assert result[0]["role"] == "system"
-        assert "[要約]" in result[0]["content"]
+        # 結果: (summary_text, recent_messages)
+        summary_text, recent_messages = result
+        assert summary_text is not None
+        assert "これまでの会話のまとめ" in summary_text
+        assert len(recent_messages) == 30
+        # messages に system ロールが含まれないこと
+        for m in recent_messages:
+            assert m["role"] != "system", (
+                f"messages に system ロールが含まれている: {m}"
+            )
         # 直近のメッセージが含まれている
-        assert result[-1]["content"] == "msg39"
+        assert recent_messages[-1]["content"] == "msg39"
 
     @pytest.mark.asyncio
     async def test_trim_below_limit_returns_unchanged(self) -> None:
-        """limit以下なら元の履歴をそのまま返す."""
+        """limit以下なら要約なし・元の履歴をそのまま返す."""
         from pneuma_core.runtime.history_summarizer import HistorySummarizer
 
         llm = AsyncMock()
@@ -273,9 +278,10 @@ class TestHistorySummarizerTrimWithSummary:
             for i in range(20)
         ]
 
-        result = await summarizer.trim_with_summary(history, limit=30)
+        summary_text, recent_messages = await summarizer.trim_with_summary(history, limit=30)
 
-        assert result == history
+        assert summary_text is None
+        assert recent_messages == history
         llm.generate.assert_not_called()
 
     @pytest.mark.asyncio
@@ -297,10 +303,13 @@ class TestHistorySummarizerTrimWithSummary:
             for i in range(35)
         ]
 
-        result = await summarizer.trim_with_summary(history, limit=30)
+        summary_text, recent_messages = await summarizer.trim_with_summary(history, limit=30)
 
-        assert result[0]["role"] == "system"
-        assert "[要約]" in result[0]["content"]
+        assert summary_text is not None
+        assert "新しい累積要約" in summary_text
+        # messages に system ロールが含まれないこと
+        for m in recent_messages:
+            assert m["role"] != "system"
 
     @pytest.mark.asyncio
     async def test_trim_fallback_on_llm_failure(self) -> None:
@@ -316,12 +325,13 @@ class TestHistorySummarizerTrimWithSummary:
             for i in range(40)
         ]
 
-        result = await summarizer.trim_with_summary(history, limit=30)
+        summary_text, recent_messages = await summarizer.trim_with_summary(history, limit=30)
 
-        # フォールバック: 単純切り捨てで末尾30件
-        assert len(result) == 30
-        assert result[-1]["content"] == "msg39"
-        assert result[0]["content"] == "msg10"
+        # フォールバック: 要約なし、単純切り捨てで末尾30件
+        assert summary_text is None
+        assert len(recent_messages) == 30
+        assert recent_messages[-1]["content"] == "msg39"
+        assert recent_messages[0]["content"] == "msg10"
 
 
 # ============================================================
@@ -533,9 +543,13 @@ class TestRuntimeEngineHistorySummarizerIntegration:
                 _make_message_input(content=f"msg{i}")
             )
 
-        # 履歴の先頭が要約メッセージであること
-        if len(engine._history) > 0 and engine._history[0]["role"] == "system":
-            assert "[要約]" in engine._history[0]["content"]
+        # 要約が _conversation_summary に保存されていること（履歴には system ロールを入れない）
+        assert engine._conversation_summary is not None
+        # 履歴に system ロールが含まれないこと
+        for m in engine._history:
+            assert m["role"] != "system", (
+                f"_history に system ロールが含まれている: {m}"
+            )
 
 
 class TestRuntimeEnginePipelineWithSummarizer:
@@ -573,12 +587,13 @@ class TestRuntimeEnginePipelineWithSummarizer:
         # 履歴がコンパクトに保たれていること
         assert len(engine._history) <= 11
 
-        # 要約が履歴のどこかに含まれている（先頭の system メッセージ）
-        system_msgs = [m for m in engine._history if m["role"] == "system"]
-        # 長い会話の後、要約が生成されていること
-        if system_msgs:
-            summary_content = system_msgs[0]["content"]
-            assert "[要約]" in summary_content
+        # 要約が _conversation_summary に保存されていること
+        assert engine._conversation_summary is not None
+        # 履歴に system ロールが含まれないこと
+        for m in engine._history:
+            assert m["role"] != "system", (
+                f"_history に system ロールが含まれている: {m}"
+            )
 
     @pytest.mark.asyncio
     async def test_summarizer_called_with_overflow_only(self) -> None:
