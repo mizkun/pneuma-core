@@ -94,35 +94,27 @@ class HistorySummarizer:
 
     async def trim_with_summary(
         self, history: list[dict], limit: int
-    ) -> list[dict]:
+    ) -> tuple[str | None, list[dict]]:
         """Trim history with summarization.
 
         If history exceeds limit, summarize overflow and return
-        [summary_message] + recent messages. If summarization fails,
-        fall back to simple truncation.
+        (summary_text, recent_messages). If summarization fails,
+        fall back to simple truncation with no summary.
 
         Args:
             history: Full conversation history.
             limit: Maximum number of recent messages to keep.
 
         Returns:
-            Trimmed history with optional summary at the head.
+            Tuple of (summary_text or None, trimmed messages).
         """
         if not self.should_summarize(history, limit):
-            return history
+            return (self._current_summary, history)
 
         summary = await self.summarize(history, limit)
         recent = history[-limit:]
 
-        if summary is not None:
-            summary_message = {
-                "role": "system",
-                "content": f"[要約] {summary}",
-            }
-            return [summary_message] + recent
-
-        # Fallback: simple truncation
-        return recent
+        return (summary, recent)
 
     @staticmethod
     def _format_messages(messages: list[dict]) -> str:
