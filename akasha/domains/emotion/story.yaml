@@ -1,0 +1,41 @@
+name: emotion
+kind: domain
+
+purpose: |
+  キャラクターの感情状態を Big Five 性格特性と連動させて推論・更新する。
+  3 層モデル (Emotion / Mood / Personality) のうち、Emotion (秒〜分) と
+  Mood の遷移をランタイムで扱う。
+
+design:
+  representation: PAD 3次元感情空間 (Pleasure / Arousal / Dominance)
+  baseline: |
+    Big Five → PAD のベースライン変換。
+    Personality がベースラインを規定し、Emotion はそこからの揺らぎとして表現する。
+  decay: |
+    指数減衰によるベースライン回帰。
+    既定の半減期は 1 時間 (`emotion_half_life = 3600` 秒)。
+
+components:
+  - PADMapping: Big Five → PAD ベースラインの数式変換
+  - Baseline: Personality に基づくベースライン算出 + 保持
+  - Decay: Δt と半減期から現在値を更新する関数
+
+invariants:
+  - Big Five が同一なら同一の PAD ベースラインが得られる
+  - 入力イベントがない時、PAD は Baseline へ単調収束する
+  - Pleasure / Arousal / Dominance はそれぞれ [-1, 1]
+
+source:
+  package: src/pneuma_core/emotion
+  contracts:
+    - akasha/contracts/EmotionalState.ts
+
+related_domains:
+  - models  (EmotionalState 型を提供)
+  - runtime (各ターンで decay → 推論 → 更新の流れを駆動)
+
+tunables:
+  emotion_half_life:
+    default: 3600
+    unit: seconds
+    description: 感情がベースラインへ向かって減衰する半減期

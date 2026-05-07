@@ -23,3 +23,8 @@ AIキャラクターに内面（性格・感情・記憶・目標）を与える
 - 内部表現は数値、プロンプト表現は自然言語
 - Protocol で抽象化、実装は差し替え可能
 - LLMプロバイダーに対して中立（anthropic 直接依存は ClaudeAdapter のみ）
+
+## Harness
+- 設計レイヤー: Akasha（`akasha.config.mjs`, `akasha/product/story.yaml`, `akasha/domains/*/story.yaml`, `akasha/contracts/*.ts`）
+- 詳細指示: `AGENTS.md`
+- 旧 VibeFlow の hard enforcement（role-based ACL, Bash gating）は使わない

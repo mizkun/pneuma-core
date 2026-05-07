@@ -1,0 +1,38 @@
+name: llm
+kind: domain
+
+purpose: |
+  LLM プロバイダ・Embedding サービスとの境界を成す層。
+  Protocol で抽象化された LLMAdapter / EmbeddingService の実装を提供する。
+
+protocols:
+  - LLMAdapter: 応答生成 / ストリーミング / プロンプトキャッシュ等の抽象
+  - EmbeddingService: テキスト → ベクトル変換の抽象
+
+bundled_implementations:
+  - id: ClaudeAdapter
+    provider: anthropic
+    extras: "pneuma-core[anthropic]"
+  - id: OpenAIAdapter
+    provider: openai
+    extras: "pneuma-core[openai]"
+  - id: OpenAIEmbeddingService
+    provider: openai
+    extras: "pneuma-core[openai]"
+
+invariants:
+  - コア (`pneuma_core.runtime`, `pneuma_core.memory` など) は anthropic / openai に直接依存しない
+  - 直接依存して良いのは `pneuma_core.llm.*` 配下の実装ファイルのみ
+  - LLMAdapter は system プロンプトを `system_prompt` に集約し、
+    `messages` には system ロールを混入させない
+    (incident: system ロール混入で Claude API がエラーになる, fix #1)
+
+source:
+  package: src/pneuma_core/llm
+  contracts:
+    - akasha/contracts/LLMAdapter.ts
+    - akasha/contracts/EmbeddingService.ts
+
+related_domains:
+  - runtime
+  - memory

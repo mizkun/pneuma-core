@@ -1,0 +1,33 @@
+name: storage
+kind: domain
+
+purpose: |
+  キャラクターの内部状態 (Character / Memory / EmotionalState / Relation 等) を
+  永続化する層。StorageBackend Protocol で抽象化されており、実装は差し替え可能。
+
+protocols:
+  - StorageBackend: トランザクション境界つきの汎用永続化 API
+
+bundled_implementations:
+  - id: SQLiteStorageBackend
+    target: SQLite (file or in-memory URI)
+    notes: 同梱・外部依存なし
+  - id: InMemoryStorageBackend
+    target: プロセス内 dict
+    notes: テスト・実験用
+
+invariants:
+  - StorageBackend を差し替えても、ランタイム挙動は同じであるべき
+  - SQLite は単一プロセス書き込み制約があるため、複数プロセスから書く構成では
+    別バックエンド (例: PostgreSQL) を選ぶ必要がある
+  - 個人データはローカルストレージに保存され、外部に送られない
+
+source:
+  package: src/pneuma_core/storage
+  contracts:
+    - akasha/contracts/StorageBackend.ts
+
+related_domains:
+  - models
+  - memory
+  - runtime

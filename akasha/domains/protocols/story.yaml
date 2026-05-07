@@ -1,0 +1,37 @@
+name: protocols
+kind: domain
+
+purpose: |
+  pneuma-core の "外側" との接続境界を一括で定義する Protocol 群。
+  外部の I/O (LLM, Storage, Memory, Embedding, Voice, Task, Middleware) は
+  すべてここで型として宣言され、実装は別ドメインや利用側に委ねられる。
+
+protocols:
+  - { id: LLMAdapter,       responsibility: LLM プロバイダ抽象 }
+  - { id: StorageBackend,   responsibility: データ永続化抽象 }
+  - { id: MemoryStore,      responsibility: 記憶ストア抽象 }
+  - { id: EmbeddingService, responsibility: Embedding 抽象 }
+  - { id: Middleware,       responsibility: パイプライン拡張 }
+  - { id: VoiceProtocol,    responsibility: 音声入出力抽象 (STT/TTS) }
+  - { id: TaskProtocol,     responsibility: タスク管理抽象 }
+
+invariants:
+  - Protocol は pure interface であり、実装詳細を持たない
+  - Python ランタイムにおける一次ソースは `src/pneuma_core/protocols/` 配下
+  - Akasha 上の `akasha/contracts/*.ts` は外側からの "仕様" として参照され、
+    Python の Protocol 定義と意味的に同期している必要がある
+
+source:
+  package: src/pneuma_core/protocols
+  contracts:
+    - akasha/contracts/LLMAdapter.ts
+    - akasha/contracts/StorageBackend.ts
+    - akasha/contracts/MemoryStore.ts
+    - akasha/contracts/EmbeddingService.ts
+    - akasha/contracts/Middleware.ts
+
+related_domains:
+  - llm
+  - storage
+  - memory
+  - runtime

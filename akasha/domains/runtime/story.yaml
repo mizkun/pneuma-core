@@ -1,0 +1,49 @@
+name: runtime
+kind: domain
+
+purpose: |
+  キャラクターが 1 メッセージを受け取り、応答を返すまでの全パイプラインを
+  オーケストレーションする層。ターンごと (リアルタイム) と
+  セッション終了時 (バッチ) の 2 つの粒度を持つ。
+
+key_principle:
+  id: char_eye_view
+  statement: |
+    キャラクターから見たら、相手が人間でもキャラクターでもシステムでも全部同じ。
+    `process_message()` という単一インターフェースで受け、同じパイプラインで返す。
+
+per_turn_pipeline:
+  - 感情減衰 (decay)
+  - 記憶検索 (memory.search)
+  - プロンプト構築 (ContextAssembler)
+  - 応答生成 (LLMAdapter.generate)
+  - 感情再推定 (post-turn analysis)
+
+session_end_pipeline:
+  - エピソード記憶の保存
+  - セマンティック記憶の更新 (consolidation)
+  - 関係性の更新 (closeness / trust の調整)
+
+components:
+  - RuntimeEngine: パイプラインの本体
+  - ContextAssembler: 性格・感情・記憶・関係性を 3 段階 (Always / Relevant / On-Demand) に組み立てる
+  - PromptBuilder: 数値 → 自然言語の変換責務
+  - Middleware: パイプラインに任意処理を差し込むフック
+
+invariants:
+  - パイプラインの順序は固定 (decay は memory.search より前に必ず走る)
+  - 数値表現はランタイム内に閉じ、LLM へ渡る前に必ず自然言語化される
+  - 失敗時はグレースフルデグレード (LLM 障害でも内部状態の整合性は壊さない)
+
+source:
+  package: src/pneuma_core/runtime
+  contracts:
+    - akasha/contracts/Middleware.ts
+    - akasha/contracts/LLMAdapter.ts
+
+related_domains:
+  - emotion
+  - memory
+  - llm
+  - storage
+  - models
