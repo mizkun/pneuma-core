@@ -1,56 +1,14 @@
-name: memory
-kind: domain
-
-purpose: |
+type: domain
+id: domain-memory
+level: L1
+who: AI agent
+why: |
   キャラクターが「思い出す」「学習する」を実現する記憶レイヤー。
-  エピソード記憶とセマンティック記憶の二重構造で構成し、
-  性格バイアス付きハイブリッドスコアリングで検索する。
-
-structure:
-  episodic: |
-    具体的な出来事の記録 (誰と・いつ・何があったか・感じた感情)。
-    会話単位で重要度フィルタを通って蓄積される。
-  semantic: |
-    エピソードから汎化された知識・関係性の理解。
-    繰り返し観測されたパターンを統合して保持する。
-
-scoring:
-  formula: |
-    score = α * similarity
-          + β(neuroticism) * importance
-          + γ(openness)    * recency
-          - λ * elapsed_time
-  parameters:
-    - { id: alpha,                  default: 0.5,  desc: 類似度の重み }
-    - { id: beta_base,              default: 0.3,  desc: 重要度の基本重み }
-    - { id: beta_neuroticism_factor,default: 0.2,  desc: 神経症傾向の影響度 }
-    - { id: gamma_base,             default: 0.2,  desc: 新しさの基本重み }
-    - { id: gamma_openness_factor,  default: 0.1,  desc: 開放性の影響度 }
-    - { id: lambda_decay,           default: 0.01, desc: "時間減衰係数 (半減期約 70 日)" }
-    - { id: memory_top_k,           default: 10,   desc: 取得する記憶の最大数 }
-
-accumulation:
-  importance_threshold: 0.6
-  max_episodes_per_conversation: 3
-  duplicate_similarity_threshold: 0.95
-  policy: |
-    重要度しきい値・本数制限・重複類似度の 3 軸でフィルタしてから保存する。
-    冗長な記憶でストアが汚染されることを避ける。
-
-invariants:
-  - 性格 (Big Five) が違えば同じ問いから想起される記憶が変わる
-  - スコア関数は単調 (類似度・重要度・新しさが大きくなれば score は減らない)
-  - Episodic を統合して Semantic を更新する経路は idempotent に近い設計を保つ
-
-source:
-  package: src/pneuma_core/memory
-  contracts:
-    - akasha/contracts/Memory.ts
-    - akasha/contracts/MemoryStore.ts
-    - akasha/contracts/EmbeddingService.ts
-
-related_domains:
-  - models   (Memory 型を提供)
-  - runtime  (ターンごとに検索を呼び出す)
-  - storage  (永続化を担う)
-  - llm      (Embedding を提供する)
+  Episodic + Semantic の二重構造で構成し、性格バイアス付き
+  ハイブリッドスコアリング (similarity / importance / recency / 時間減衰) で検索する。
+modules:
+  - store
+  - search
+  - similarity
+  - consolidator
+  - semantic_consolidator

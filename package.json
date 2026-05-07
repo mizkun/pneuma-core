@@ -2,16 +2,27 @@
   "name": "pneuma-core-akasha",
   "version": "0.0.0",
   "private": true,
-  "description": "Akasha harness for pneuma-core. The runtime is Python (see pyproject.toml). This package only carries the Akasha config, Story YAMLs and Contract type definitions.",
+  "description": "Akasha harness for pneuma-core. The runtime is Python (see pyproject.toml). This package only carries the Akasha config, Story YAMLs and Contract definitions.",
   "type": "module",
   "main": "akasha.config.mjs",
   "scripts": {
-    "test": "echo 'Python tests live in tests/. Run: .venv/bin/python -m pytest tests/ -x --tb=short' && exit 0"
+    "akasha": "akasha",
+    "story:validate": "akasha validate",
+    "contracts:lint": "akasha lint-contracts",
+    "contracts:map": "akasha contract-map",
+    "dashboard": "akasha dashboard",
+    "test:python": ".venv/bin/python -m pytest tests/ -x --tb=short"
   },
   "akasha": {
     "config": "./akasha.config.mjs",
     "product": "./akasha/product/story.yaml",
     "domains": "./akasha/domains",
     "contracts": "./akasha/contracts"
+  },
+  "devDependencies": {
+    "@mizkun/akasha": "file:../../akasha/packages/akasha"
+  },
+  "comments": {
+    "devDependencies": "Path is relative to the canonical repo root (/Users/kyohei/vibe/pneuma-core/). Akasha is not yet published to npm; for local development, install via `npm install` from the repo root."
   }
 }

@@ -1,22 +1,26 @@
-// Akasha Contract — EmotionalState
+// Akasha Contract — EmotionalState / Mood
 //
 // Python 一次ソース: src/pneuma_core/models/emotion.py
-// PAD 3次元感情空間。値域は [-1, 1]。Big Five からベースラインを計算し、
-// 指数減衰でベースラインへ回帰する。
-
-export interface PAD {
-  /** 快 / 不快。[-1, 1]。 */
-  pleasure: number;
-  /** 覚醒。[-1, 1]。 */
-  arousal: number;
-  /** 支配 / 服従。[-1, 1]。 */
-  dominance: number;
-}
+//
+// PAD 3 次元感情。値域は [-1, 1]。
+// EmotionalState は離散ラベル + 状況説明を併せ持ち、Mood は PAD のみの移動平均。
 
 export interface EmotionalState {
-  character_id: string;
-  current: PAD;
-  baseline: PAD;
-  /** 直近の更新時刻 (ISO 8601)。decay 計算の基準。 */
-  updated_at: string;
+  /** 不快 → 快。 */
+  pleasure: number;
+  /** 沈静 → 興奮。 */
+  arousal: number;
+  /** 服従 → 支配。 */
+  dominance: number;
+  /** 表示用の離散ラベル (例: "中立", "喜び")。 */
+  emotion_label: string;
+  /** 現在の状況を表す 1 文。 */
+  situation: string;
+}
+
+/** 中期感情 (時間〜日)。EmotionalState を入力として指数移動平均で更新する。 */
+export interface Mood {
+  pleasure: number;
+  arousal: number;
+  dominance: number;
 }

@@ -1,23 +1,28 @@
-// Akasha Contract — LLMAdapter
+// Akasha Contract — LLMAdapter / LLMRequest / LLMResponse / ModelConfig
 //
 // Python 一次ソース: src/pneuma_core/protocols/llm.py
-// この型は Python の `LLMAdapter` Protocol と意味的に同期している必要がある。
-// 値の正規化 (temperature, max_tokens の検証) は Python 側で行う。
+//
+// 値域チェック (temperature ∈ [0, 2.0], max_tokens > 0) は Python 側で行う。
 
 export interface LLMRequest {
-  /** system プロンプト本体。messages に system ロールを混入させてはならない (#1)。 */
+  /**
+   * system プロンプト本体。
+   * Python 側の規約: messages に system ロールを混入させてはならない (#1, fix #2)。
+   */
   system_prompt: string;
 
-  /** OpenAI/Anthropic 互換の chat messages。各要素は { role, content } 形式。 */
-  messages: Array<{ role: "user" | "assistant" | "tool"; content: string }>;
+  /**
+   * Chat messages。Python 側の型は `list[dict]` で role の制約は持たない
+   * (キャッシュ系統で system_prompt と分離させる方針)。
+   */
+  messages: Array<Record<string, unknown>>;
 
-  /** 省略時はアダプタの既定モデルを使用。 */
   model?: string | null;
 
-  /** [0.0, 2.0]。範囲外は実行時に弾かれる。 */
+  /** [0.0, 2.0]。 */
   temperature: number;
 
-  /** > 0。範囲外は実行時に弾かれる。 */
+  /** > 0。 */
   max_tokens: number;
 
   /** プロンプトキャッシュ対象とする静的な system 部 (任意)。 */
@@ -43,7 +48,7 @@ export interface ModelConfig {
 
 /**
  * LLM 通信アダプタの境界。
- * 実装は `pneuma_core.llm.*` 配下に限定し、`pneuma_core.runtime` などのコアは
+ * 実装は `pneuma_core.llm.*` 配下に限定し、コア層 (runtime / memory) は
  * これを型としてのみ参照する。
  */
 export interface LLMAdapter {

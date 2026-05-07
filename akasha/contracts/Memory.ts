@@ -1,21 +1,23 @@
 // Akasha Contract — Memory models
 //
 // Python 一次ソース: src/pneuma_core/models/memory.py
+//
 // 二重記憶システム (Episodic + Semantic) のデータ表現。
 
 export interface EpisodicMemory {
   id: string;
   character_id: string;
+  /** 出来事の自然言語表現。 */
   content: string;
-  /** 0.0..1.0 程度に正規化された重要度。 */
+  /** ISO 8601 形式の datetime 文字列 (Python 側は datetime)。 */
+  timestamp: string;
+  /** [-1, 1]。不快 → 快。 */
+  emotional_valence: number;
+  /** [0, 1]。重要度。 */
   importance: number;
-  /** 観測時の埋め込みベクトル。 */
-  embedding: number[];
-  /** ISO 8601 時刻。 */
-  created_at: string;
-  /** 観測時の感情スナップショット (PAD)。任意。 */
-  emotional_snapshot?: { pleasure: number; arousal: number; dominance: number } | null;
-  metadata?: Record<string, unknown>;
+  conversation_id?: string | null;
+  /** 1536 次元程度の埋め込みベクトル (未生成時は null)。 */
+  embedding?: number[] | null;
 }
 
 export interface SemanticMemory {
@@ -23,10 +25,9 @@ export interface SemanticMemory {
   character_id: string;
   /** 汎化された知識・パターンの自然言語表現。 */
   content: string;
-  /** 統合された出来事の数 (信頼度の代理指標)。 */
-  consolidation_count: number;
-  embedding: number[];
-  created_at: string;
-  updated_at: string;
-  metadata?: Record<string, unknown>;
+  /** [0, 1]。裏付けエピソード数で増加する信頼度。 */
+  confidence: number;
+  /** 統合元のエピソード ID 集合。 */
+  source_episode_ids: string[];
+  embedding?: number[] | null;
 }

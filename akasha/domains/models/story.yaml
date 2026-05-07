@@ -1,32 +1,21 @@
-name: models
-kind: domain
-
-purpose: |
-  キャラクターを構成する内面の不変的・可変的データ構造を定義する層。
-  内部表現は数値（計算可能な状態）として持ち、必要に応じて自然言語に変換される。
-
-owns:
-  - Character / CharacterSheet (Big Five, Schwartz Values, プロフィール, 口調)
-  - EmotionalState (PAD 3次元の現在値とベースライン)
-  - Memory (Episodic / Semantic それぞれの単位)
-  - Goals (Vision / Objective / Task の3階層)
-  - Relation (closeness / trust など、相手ごとの関係性スコア)
-  - Message / Entity / ChangeRecord / Diagnostic / Todo
-
-invariants:
-  - Big Five と Schwartz Values は作成時に決まり、ランタイム中は不変として扱う
-  - PAD は [-1, 1] に収まる
-  - 数値はすべて float もしくは bounded float
-  - これらのモデルは I/O や副作用を持たない (純粋なデータ層)
-
-source:
-  package: src/pneuma_core/models
-  contracts:
-    - akasha/contracts/Character.ts
-    - akasha/contracts/EmotionalState.ts
-    - akasha/contracts/Memory.ts
-    - akasha/contracts/Goals.ts
-
-non_goals:
-  - 永続化の責務は持たない (それは storage)
-  - LLM への変換ロジックは持たない (それは runtime / prompt builder)
+type: domain
+id: domain-models
+level: L1
+who: AI agent
+why: |
+  キャラクターを構成する不変的・可変的データ構造を一カ所に集約する。
+  純粋なデータ層とし、I/O や副作用を持たない。数値表現 (Big Five, PAD,
+  closeness/trust 等) を保持し、自然言語化は他層 (runtime) の責務。
+modules:
+  - character
+  - personality
+  - values
+  - emotion
+  - memory
+  - goals
+  - message
+  - relation
+  - change_record
+  - todo
+  - entity
+  - diagnostic
