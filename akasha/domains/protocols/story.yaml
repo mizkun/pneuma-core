@@ -1,0 +1,30 @@
+id: protocols
+version: 1
+
+who: AI agent developing pneuma-core
+why: |
+  pneuma-core の "外側" との接続境界を一括で定義する Protocol 群。
+  外部 I/O (LLM / Storage / Memory / Embedding / Voice / Task / Middleware) は
+  すべてここで型として宣言され、実装は別ドメインまたは利用側に委ねられる。
+
+invariants:
+  - id: pure-interface
+    text: Protocol は pure interface (typing.Protocol) で実装詳細を持たない
+  - id: source-of-truth
+    text: pneuma-core における Protocol 一次ソースは src/pneuma_core/protocols/ 配下に限る
+  - id: contract-mirror
+    text: Akasha 側の akasha/contracts/* は Python Protocol を写し取った "外側の仕様"。意味的に同期している必要がある
+  - id: runtime-checkable
+    text: 利用側の duck-typing 検査を可能にするため、可能な限り @runtime_checkable を付与する
+
+modules:
+  - llm
+  - storage
+  - memory_store
+  - embedding
+  - middleware
+  - voice
+  - task
+
+owners:
+  - mizkun

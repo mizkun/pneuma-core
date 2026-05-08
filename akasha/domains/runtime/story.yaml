@@ -1,0 +1,46 @@
+id: runtime
+version: 1
+
+who: AI agent developing pneuma-core
+why: |
+  キャラクターが 1 メッセージを受け取り応答を返すまでの全パイプラインを
+  オーケストレーションする層。process_message() という単一インターフェースで
+  人間 / キャラクター / システムを区別せずに受け、ターン (リアルタイム) と
+  セッション終了 (バッチ) の 2 粒度の処理を駆動する。
+
+invariants:
+  - id: char-eye-view-applied
+    text: process_message() は MessageInput の sender_type 別に分岐せず、同一パイプラインで処理する
+  - id: pipeline-order-fixed
+    text: ターン処理の順序は固定 — 感情減衰 → 記憶検索 → プロンプト構築 → LLM 生成 → 応答パース → 感情再推定
+  - id: numbers-converted-to-natural-language
+    text: ContextAssembler / PromptBuilder により、LLM へ渡る前に数値表現は必ず自然言語へ変換される
+  - id: graceful-degradation
+    text: LLM 障害時も内部状態の整合性は保ち、SystemMessage で利用側に伝える
+  - id: middleware-pre-and-post
+    text: Middleware は pre_process と post_process の 2 点で介入する。チェーン順序は登録順
+  - id: prompt-cache-split
+    text: 静的 system プロンプトと動的部を分離して LLMRequest に詰める (キャッシュヒット率を上げるため)
+
+modules:
+  - engine
+  - prompt_builder
+  - emotion_engine
+  - context_assembler
+  - middleware
+  - response_parser
+  - prompt_cache
+  - history_summarizer
+  - session
+  - session_end_pipeline
+  - user_context
+  - user_context_search
+  - user_context_writer
+  - user_context_consolidator
+  - proactive
+  - diary_writer
+  - diary_processor
+  - diary_coaching
+
+owners:
+  - mizkun
