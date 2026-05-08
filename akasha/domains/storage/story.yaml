@@ -1,0 +1,29 @@
+id: storage
+version: 1
+
+who: AI agent developing pneuma-core
+why: |
+  キャラクターの内部状態 (Character / Memory / EmotionalState / Goals /
+  Relation / ChangeRecord / TodoItem) を永続化する層。
+  StorageBackend Protocol で抽象化されており、実装は差し替え可能。
+  SQLite / InMemory が同梱、それ以外は外部実装に委ねる。
+
+invariants:
+  - id: backend-substitutability
+    text: StorageBackend を差し替えても、ランタイム挙動は同じであるべき (Protocol 規約)
+  - id: local-storage-only
+    text: 個人データはローカルストレージに保存され、外部に送られない
+  - id: sqlite-single-writer
+    text: 同梱 SQLite は単一プロセス書き込み制約あり。複数プロセス書き込みは別バックエンド (例 PostgreSQL) を選ぶ
+  - id: similarity-search-via-backend
+    text: ベクトル類似検索は StorageBackend.find_similar_memories を通す (memory.search が直接 SQL を組まない)
+  - id: relation-and-todo-mutable
+    text: Relation / TodoItem は mutable dataclass。書き込み時は updated_at / completed_at の更新を保証する
+
+modules:
+  - backend
+  - sqlite
+  - in_memory
+
+owners:
+  - mizkun

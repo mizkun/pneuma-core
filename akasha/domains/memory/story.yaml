@@ -1,0 +1,30 @@
+id: memory
+version: 1
+
+who: AI agent developing pneuma-core
+why: |
+  キャラクターが「思い出す」「学習する」を実現する記憶レイヤー。
+  Episodic + Semantic の二重構造で構成し、性格バイアス付き
+  ハイブリッドスコアリング (similarity / importance / recency / 時間減衰) で検索する。
+
+invariants:
+  - id: personality-biased-recall
+    text: 性格 (Big Five) が違えば、同じ問いから想起される記憶が変わる (神経症傾向で重要度重み、開放性で新しさ重みが変動)
+  - id: monotonic-score
+    text: スコア関数は単調 — similarity / importance / recency が大きくなれば score は減らない
+  - id: filtered-accumulation
+    text: Episodic の保存は importance_threshold (0.6) と max_episodes_per_conversation (3) と duplicate_similarity_threshold (0.95) でフィルタする
+  - id: idempotent-consolidation
+    text: Episodic を統合して Semantic を更新する経路は idempotent に近い設計を保つ (同じ入力で同じ結果)
+  - id: embedding-required-for-search
+    text: 性格バイアス付き類似検索を行う前に embedding が生成されている必要がある (未生成時は降格 or 例外)
+
+modules:
+  - store
+  - search
+  - similarity
+  - consolidator
+  - semantic_consolidator
+
+owners:
+  - mizkun

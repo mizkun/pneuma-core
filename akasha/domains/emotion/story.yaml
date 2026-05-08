@@ -1,0 +1,29 @@
+id: emotion
+version: 1
+
+who: AI agent developing pneuma-core
+why: |
+  キャラクターの感情状態を Big Five 性格特性と連動させて推論・更新する。
+  PAD 3 次元空間で表現し、Big Five からベースラインを算出、
+  指数減衰でベースラインへ回帰する。Emotion (秒〜分) と Mood (時間〜日) の
+  2 つの時間粒度を扱う。
+
+invariants:
+  - id: deterministic-baseline
+    text: Big Five が同一なら同一の PAD ベースラインが得られる (pad_mapping は純関数)
+  - id: monotonic-convergence
+    text: 入力イベントがない時、PAD は Baseline へ単調収束する
+  - id: half-life-positive
+    text: emotion_half_life は正の秒数 (既定 3600)。0 や負値は不可
+  - id: pad-stays-in-range
+    text: 減衰後の PAD は常に [-1, 1] に収まる (clamp 必須)
+  - id: no-side-effects
+    text: emotion/* は永続化を行わない (storage への保存は runtime が責任を持つ)
+
+modules:
+  - baseline
+  - decay
+  - pad_mapping
+
+owners:
+  - mizkun

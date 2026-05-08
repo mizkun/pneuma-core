@@ -1,0 +1,44 @@
+id: models
+version: 1
+
+who: AI agent developing pneuma-core
+why: |
+  キャラクターを構成する不変的・可変的データ構造を一カ所に集約する。
+  純粋なデータ層として I/O や副作用を持たず、数値表現
+  (Big Five, PAD, closeness/trust 等) を保持する。
+  自然言語化は他層 (runtime / prompt_builder) の責務とする。
+
+invariants:
+  - id: bigfive-range
+    text: Big Five の各特性 (openness/conscientiousness/extraversion/agreeableness/neuroticism) は [0, 1] で保持する
+  - id: pad-range
+    text: PAD (pleasure/arousal/dominance) は [-1, 1] で保持する
+  - id: schwartz-range
+    text: Schwartz 4 カテゴリ (self_transcendence/self_enhancement/openness_to_change/conservation) は [0, 1] で保持する
+  - id: pure-data-layer
+    text: models/* は I/O や副作用を持たず、副作用は dataclass の __post_init__ における範囲検証のみ
+  - id: id-references-not-nesting
+    text: GoalTree は visions/objectives/tasks をフラットなリストで保持し、階層は ID 参照で繋ぐ
+  - id: importance-confidence-range
+    text: EpisodicMemory.importance, SemanticMemory.confidence は [0, 1]、emotional_valence は [-1, 1]
+  - id: closeness-trust-range
+    text: Relation.closeness, Relation.trust は [0, 1] で保持する
+  - id: sender-type-enum
+    text: MessageInput.sender_type は {human, character, system} のいずれかに限る
+
+modules:
+  - character
+  - personality
+  - values
+  - emotion
+  - memory
+  - goals
+  - message
+  - relation
+  - change_record
+  - todo
+  - entity
+  - diagnostic
+
+owners:
+  - mizkun

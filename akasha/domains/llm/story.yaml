@@ -1,0 +1,30 @@
+id: llm
+version: 1
+
+who: AI agent developing pneuma-core
+why: |
+  LLM プロバイダおよび Embedding サービスとの境界を成す層。
+  Protocol で抽象化された LLMAdapter / EmbeddingService の実装を提供する。
+  anthropic / openai への直接依存を許容するのはこの層のみ。
+
+invariants:
+  - id: only-llm-layer-uses-vendors
+    text: anthropic / openai パッケージへの直接依存は pneuma_core.llm.* 配下に限る (runtime / memory は型のみ参照)
+  - id: extras-optional
+    text: anthropic / openai は optional extras (`pip install pneuma-core[anthropic]` / `[openai]`)
+  - id: system-prompt-not-in-messages
+    text: LLMRequest.messages に system ロールを混入させない。system は system_prompt フィールドへ集約 (incident #1, fix #2)
+  - id: temperature-range
+    text: temperature は [0.0, 2.0]
+  - id: max-tokens-positive
+    text: max_tokens > 0
+  - id: response-includes-usage
+    text: LLMResponse は { content, model, usage } を必ず返す (cost / cache 観測のため)
+
+modules:
+  - adapter
+  - claude
+  - embedding
+
+owners:
+  - mizkun
