@@ -220,13 +220,14 @@ export const semanticMemoryContract = defineContract({
 });
 
 // ─── 4. Embedding ──────────────────────────────────────────────────────────
-const embeddingVectorSchema = z.object({
-  vector: z.array(z.number()),
-  /** 正規化されたモデル名 (例: text-embedding-3-small)。 */
-  model: z.string().optional(),
-  /** ベクトル次元数。 */
-  dim: z.number().int().positive().optional(),
-});
+// Python 一次ソース:
+//   src/pneuma_core/protocols/embedding.py — `EmbeddingService.embed(text) -> list[float]`
+//                                            `EmbeddingService.embed_batch(texts) -> list[list[float]]`
+//   src/pneuma_core/llm/embedding.py       — OpenAIEmbeddingService 実装
+// 補助 TS 仕様: akasha/contracts/EmbeddingService.ts
+//
+// 単一の埋め込みベクトルそのものを契約とする (フラットな number[])。
+const embeddingVectorSchema = z.array(z.number());
 
 export const embeddingVectorContract = defineContract({
   id: "embedding-vector",
@@ -234,9 +235,9 @@ export const embeddingVectorContract = defineContract({
   semver: "1.0.0",
   provider_contract: embeddingVectorSchema,
   consumer_contracts: {
-    "memory.search": embeddingVectorSchema.pick({ vector: true }),
-    "memory.store": embeddingVectorSchema.pick({ vector: true }),
-    "memory.consolidator": embeddingVectorSchema.pick({ vector: true }),
+    "memory.search": embeddingVectorSchema,
+    "memory.store": embeddingVectorSchema,
+    "memory.consolidator": embeddingVectorSchema,
   },
   layer: "3F-external-service",
   allowed_consumer_layers: ["2F-state-machine", "4F-domain"],
@@ -248,7 +249,8 @@ export const embeddingVectorContract = defineContract({
   producers: ["llm.embedding"],
   consumers: ["memory.search", "memory.store", "memory.consolidator"],
   rationale:
-    "外部 Embedding サービスの出力。vector のみが消費されることが多い。",
+    "Python の EmbeddingService.embed() は list[float] を返す。" +
+    "契約はそのフラットなベクトル (number[]) 自体。複数返す API は number[][]。",
 });
 
 // ─── 5. LLM I/O ────────────────────────────────────────────────────────────
