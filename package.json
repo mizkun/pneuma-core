@@ -1,8 +1,12 @@
 {
   "name": "pneuma-core-akasha",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Akasha harness for pneuma-core. The runtime is Python (see pyproject.toml). This package only carries the Akasha config, Story YAMLs and Contract definitions.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mizkun/pneuma-core.git"
+  },
   "type": "module",
   "main": "akasha.config.mjs",
   "scripts": {

@@ -1,7 +1,7 @@
 id: storage
 version: 1
 
-who: AI agent developing pneuma-core
+who: StorageBackend 実装 (SQLite / InMemory / 外部 DB) を実装する開発者
 why: |
   キャラクターの内部状態 (Character / Memory / EmotionalState / Goals /
   Relation / ChangeRecord / TodoItem) を永続化する層。

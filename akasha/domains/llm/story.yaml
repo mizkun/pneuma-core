@@ -1,7 +1,7 @@
 id: llm
 version: 1
 
-who: AI agent developing pneuma-core
+who: LLMAdapter / EmbeddingService を実装または差し替える開発者
 why: |
   LLM プロバイダおよび Embedding サービスとの境界を成す層。
   Protocol で抽象化された LLMAdapter / EmbeddingService の実装を提供する。
