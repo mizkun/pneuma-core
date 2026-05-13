@@ -18,13 +18,84 @@ invariants:
     text: 利用側の duck-typing 検査を可能にするため、可能な限り @runtime_checkable を付与する
 
 modules:
-  - llm
-  - storage
-  - memory_store
-  - embedding
-  - middleware
-  - voice
-  - task
+  - id: llm
+    story: |
+      LLMAdapter Protocol と LLMRequest / LLMResponse / ModelConfig の dataclass、
+      および temperature / max_tokens の range 検証ヘルパ。
+    responsibility: |
+      LLMRequest.system_prompt と messages の分離を強制する型を提供する。
+      temperature ∈ [0, 2.0], max_tokens > 0 の検証は __post_init__ で行う。
+    files:
+      - src/pneuma_core/protocols/llm.py
+    contracts:
+      - llm-request
+      - llm-response
+
+  - id: storage
+    story: |
+      StorageBackend Protocol — Character / Memory / Goals / State /
+      ChangeLog / Todo / Relation の CRUD を統合する境界。
+    responsibility: |
+      永続化の全 API をこの 1 Protocol に集約する。
+      アクセス署名 (引数と戻り値の型) を変えない。
+    files:
+      - src/pneuma_core/protocols/storage.py
+
+  - id: memory_store
+    story: |
+      MemoryStore Protocol — 記憶に特化した永続化境界。Storage と分離して
+      ベクトル類似検索 (find_similar_episodic) を一級市民にする。
+    responsibility: |
+      add_episodic / add/update/delete_semantic / get_*_by_character /
+      find_similar_episodic の 7 メソッド契約を保つ。
+    files:
+      - src/pneuma_core/protocols/memory_store.py
+
+  - id: embedding
+    story: |
+      EmbeddingService Protocol — テキスト→ベクトル変換の境界。
+    responsibility: |
+      embed(text) は list[float]、embed_batch(texts) は list[list[float]] を返す
+      という戻り値型を変えない。@runtime_checkable で実装側の duck-typing を許す。
+    files:
+      - src/pneuma_core/protocols/embedding.py
+    contracts:
+      - embedding-vector
+
+  - id: middleware
+    story: |
+      Middleware Protocol と PipelineContext dataclass — RuntimeEngine の
+      パイプラインに pre_process / post_process の 2 点で介入するフック。
+    responsibility: |
+      PipelineContext のフィールド (character / emotion / goals / memories /
+      system_prompt / history / turn_count / metadata) を変えない。
+      pre/post の入出力型を保つ。
+    files:
+      - src/pneuma_core/protocols/middleware.py
+    contracts:
+      - pipeline-context
+
+  - id: voice
+    story: |
+      音声入出力の Protocol 2 つ — TTSAdapter (テキスト→音声バイナリ) と
+      STTService (音声バイナリ→テキスト)。
+    responsibility: |
+      synthesize(text, emotion_tags) -> bytes と
+      transcribe(audio, language) -> str の署名を保つ。
+      実装は外部 (アプリ側 or extras) に委ねる。
+    files:
+      - src/pneuma_core/protocols/voice.py
+
+  - id: task
+    story: |
+      TaskBackend Protocol — 外部タスク管理 (Linear / GitHub Issues 等) との
+      境界 (#132)。list / get / create / update / complete / delete を統一する。
+    responsibility: |
+      タスクモデル (Task / TaskCreate / TaskUpdate, 一次は
+      `pneuma_core.task.models`) のフィールドを変えない。
+      Protocol は実装詳細を持たない。
+    files:
+      - src/pneuma_core/protocols/task.py
 
 owners:
   - mizkun

@@ -23,24 +23,201 @@ invariants:
     text: 静的 system プロンプトと動的部を分離して LLMRequest に詰める (キャッシュヒット率を上げるため)
 
 modules:
-  - engine
-  - prompt_builder
-  - emotion_engine
-  - context_assembler
-  - middleware
-  - response_parser
-  - prompt_cache
-  - history_summarizer
-  - session
-  - session_end_pipeline
-  - user_context
-  - user_context_search
-  - user_context_writer
-  - user_context_consolidator
-  - proactive
-  - diary_writer
-  - diary_processor
-  - diary_coaching
+  - id: engine
+    story: |
+      RuntimeEngine — 1 メッセージを受け取り、感情減衰 → 記憶検索 →
+      プロンプト構築 → LLM 生成 → 応答解析 → 感情更新を順に実行する中核。
+    responsibility: |
+      ターン処理の順序を変えない。LLM 障害時は SystemMessage で
+      利用側に伝え、内部状態 (emotion / memory / relation) の整合性は壊さない。
+      Middleware の pre/post 介入点と PipelineContext の伝搬を保つ。
+    files:
+      - src/pneuma_core/runtime/engine.py
+    contracts:
+      - message-input
+      - message-output
+      - pipeline-context
+
+  - id: prompt_builder
+    story: |
+      PromptBuilder — 5 コンテキスト (personality / values / memory / goals /
+      state) + ユーザーコンテキストから system prompt を組み立てる。
+    responsibility: |
+      数値表現は LLM へ渡る前に必ず自然言語化する (Big Five / PAD /
+      closeness 等)。PromptCache を意識した static / dynamic 分離を保つ。
+    files:
+      - src/pneuma_core/runtime/prompt_builder.py
+
+  - id: emotion_engine
+    story: |
+      EmotionEngine — LLM ベースの PAD 感情推定とライフサイクル管理。
+      EmotionConfig で半減期や baseline 計算の係数を扱う。
+    responsibility: |
+      emotion ドメインの baseline / decay を呼び出し、ターン前後で
+      EmotionalState を更新する。NEUTRAL_EMOTION を「中立」状態の正本にする。
+    files:
+      - src/pneuma_core/runtime/emotion_engine.py
+    contracts:
+      - emotional-state
+
+  - id: context_assembler
+    story: |
+      ContextAssembler — 3 段階コンテキスト注入 (Always / Relevant / On-Demand)
+      を行う AssembledContext + ContextStage。
+    responsibility: |
+      Stage 1: identity 系 (profile / personality / values / 口調 /
+      response_format / emotion / user_context tier1)。Stage 2: state 系
+      (relations フィルタ / goals / memories)。Stage 3: 要求時のみロード。
+    files:
+      - src/pneuma_core/runtime/context_assembler.py
+
+  - id: middleware
+    story: |
+      Middleware / PipelineContext の後方互換 re-export。正本は
+      `pneuma_core.protocols.middleware`。
+    responsibility: |
+      旧 import path を壊さない。Protocol を素通しで再エクスポートする。
+    files:
+      - src/pneuma_core/runtime/middleware.py
+    contracts:
+      - pipeline-context
+
+  - id: response_parser
+    story: |
+      LLM の構造化応答 (speech / thought / action) を JSON ベースで
+      パースして StructuredResponse に詰め直す。
+    responsibility: |
+      diary_processor の _parse_json_response と同じ "JSON 部分を取り出す"
+      フォーマット規約を保つ。パース失敗時は降格して raw を返す。
+    files:
+      - src/pneuma_core/runtime/response_parser.py
+    contracts:
+      - llm-response
+
+  - id: prompt_cache
+    story: |
+      PromptCache + CachedPrompt — system プロンプトを静的 (キャッシュ対象) と
+      動的 (毎ターン変動) に分けて LLMRequest に詰める。
+    responsibility: |
+      LLMRequest.system_prompt_cached / system_prompt_dynamic の分割を維持し、
+      Anthropic のプロンプトキャッシュヒット率を下げない。
+    files:
+      - src/pneuma_core/runtime/prompt_cache.py
+    contracts:
+      - llm-request
+
+  - id: history_summarizer
+    story: |
+      会話履歴がコンテキスト上限を超えそうな時、LLM 要約に置き換える HistorySummarizer。
+    responsibility: |
+      要約された履歴と直近の生履歴を組み合わせて、欠落を抑えつつトークン制限内に収める。
+      要約自体の生成は LLMAdapter に委ねる。
+    files:
+      - src/pneuma_core/runtime/history_summarizer.py
+
+  - id: session
+    story: |
+      SessionManager — 会話 session の生成・タイムアウト・終了判定を司る。
+    responsibility: |
+      uuid ベースで session_id を採番し、無活動タイムアウトで session_end_pipeline を発火する条件を保つ。
+    files:
+      - src/pneuma_core/runtime/session.py
+
+  - id: session_end_pipeline
+    story: |
+      SessionEndPipeline — セッション終了時に Opus 1 回で
+      episodic / semantic / relationship を統合更新するバッチ処理 (#130)。
+    responsibility: |
+      memory.consolidator / memory.semantic_consolidator / relation の更新を
+      1 LLM 呼び出しに集約する。中断しても整合性が壊れない順序で書き戻す。
+    files:
+      - src/pneuma_core/runtime/session_end_pipeline.py
+    contracts:
+      - episodic-memory
+      - semantic-memory
+      - relation
+      - change-record
+
+  - id: user_context
+    story: |
+      UserContextLoader — 外部ディレクトリ (identity.md / values.md /
+      glossary.md / core_experiences.md / projects/*.md / diary/*.md) を
+      Layer 1〜5 として読み込む。
+    responsibility: |
+      ファイル不在は許容して空 layer を返す。Layer 構造と読み順を変えない
+      (diary は日付降順)。
+    files:
+      - src/pneuma_core/runtime/user_context.py
+
+  - id: user_context_search
+    story: |
+      UserContextSearchEngine — user context chunk のベクトル検索。
+      ハッシュベースのキャッシュで未変更 chunk の再 embedding を避ける。
+    responsibility: |
+      cosine similarity を使ったクエリ→chunk マッチ。SearchResult として
+      score 順に返す。chunk hash が変わらなければ embedding を再利用する。
+    files:
+      - src/pneuma_core/runtime/user_context_search.py
+    contracts:
+      - embedding-vector
+
+  - id: user_context_writer
+    story: |
+      UserContextWriter — セッション終了時に LLM が出力した
+      user_context_updates を実ファイルへ反映し git commit する (#136)。
+    responsibility: |
+      セクション単位の partial modification を保ち、ファイル全体を上書きしない。
+      書き込み後の commit メッセージは決め打ちフォーマット。
+    files:
+      - src/pneuma_core/runtime/user_context_writer.py
+
+  - id: user_context_consolidator
+    story: |
+      UserContextConsolidator — Haiku で会話から context update を検出し、
+      risk レベル別に適用する。
+    responsibility: |
+      LOW (projects/) は自動適用、MEDIUM (glossary) は自動適用 + サマリ通知、
+      HIGH (identity / values / core_experiences) は提案のみで PO 承認待ち。
+    files:
+      - src/pneuma_core/runtime/user_context_consolidator.py
+
+  - id: proactive
+    story: |
+      ProactiveEngine — キャラクターが時刻・直近活動・pending item を見て
+      自発的に話しかけるべきか判断し、必要なら自然な発話を生成する。
+    responsibility: |
+      World Engine の ThinkCycle ではない。ターン駆動とは別軸の
+      "起点なしで話し始める" 経路で、評価間隔と判定条件を変えない。
+    files:
+      - src/pneuma_core/runtime/proactive.py
+
+  - id: diary_writer
+    story: |
+      DiaryWriter — キャラクターの日記を会話履歴から自動生成する。
+    responsibility: |
+      日次トリガで動作することを前提に、対象日の出来事と感情から
+      character_id 紐付きの diary ファイルを出力する。
+    files:
+      - src/pneuma_core/runtime/diary_writer.py
+
+  - id: diary_processor
+    story: |
+      DiaryProcessor / BootstrapProcessor — 新規 diary entry を増分処理し、
+      Bootstrap モードでは過去全 diary を一括処理して初期コンテキストを生成する。
+    responsibility: |
+      増分 (daily trigger) と bulk (bootstrap) の 2 モードを保つ。
+      JSON パースは _parse_json_response の規約に従う。
+    files:
+      - src/pneuma_core/runtime/diary_processor.py
+
+  - id: diary_coaching
+    story: |
+      DiaryCoaching — ユーザー日記を読み、コーチング的な応答を補助する。
+    responsibility: |
+      日記から最近のテーマや感情変化を引いて、キャラクターの応答を
+      "コーチング" 寄りに寄せる補助コンテキストとして返す。
+    files:
+      - src/pneuma_core/runtime/diary_coaching.py
 
 owners:
   - mizkun
