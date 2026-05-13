@@ -1,7 +1,7 @@
 id: protocols
 version: 1
 
-who: AI agent developing pneuma-core
+who: 外部境界 Protocol (LLM / Storage / Memory / Embedding / Middleware / Voice / Task) を設計・追加する開発者
 why: |
   pneuma-core の "外側" との接続境界を一括で定義する Protocol 群。
   外部 I/O (LLM / Storage / Memory / Embedding / Voice / Task / Middleware) は

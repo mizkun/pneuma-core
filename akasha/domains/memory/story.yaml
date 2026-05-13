@@ -1,7 +1,7 @@
 id: memory
 version: 1
 
-who: AI agent developing pneuma-core
+who: 記憶レイヤー (Episodic / Semantic / 性格バイアス検索 / 統合) を実装する開発者
 why: |
   キャラクターが「思い出す」「学習する」を実現する記憶レイヤー。
   Episodic + Semantic の二重構造で構成し、性格バイアス付き

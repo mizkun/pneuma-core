@@ -1,7 +1,7 @@
 id: emotion
 version: 1
 
-who: AI agent developing pneuma-core
+who: 感情エンジン (PAD / Big Five 連動 / 減衰) を実装・調整する開発者
 why: |
   キャラクターの感情状態を Big Five 性格特性と連動させて推論・更新する。
   PAD 3 次元空間で表現し、Big Five からベースラインを算出、

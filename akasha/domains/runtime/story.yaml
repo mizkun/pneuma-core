@@ -1,7 +1,7 @@
 id: runtime
 version: 1
 
-who: AI agent developing pneuma-core
+who: ターン処理パイプライン (process_message と session 終了処理) を実装する開発者
 why: |
   キャラクターが 1 メッセージを受け取り応答を返すまでの全パイプラインを
   オーケストレーションする層。process_message() という単一インターフェースで

@@ -1,7 +1,7 @@
 id: models
 version: 1
 
-who: AI agent developing pneuma-core
+who: pneuma-core のデータモデルを実装・拡張する開発者
 why: |
   キャラクターを構成する不変的・可変的データ構造を一カ所に集約する。
   純粋なデータ層として I/O や副作用を持たず、数値表現
