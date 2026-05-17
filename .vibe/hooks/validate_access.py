@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""
+VibeFlow Access Guard Hook
+Validates file access permissions based on current role.
+Reads role from session state (VIBEFLOW_SESSION) or falls back to .vibe/state.yaml.
+Exit code 2 blocks the tool call (Claude Code specification).
+
+GENERATED FILE — Do not edit manually.
+Source: core/schema/policy.yaml
+Generator: core/generators/generate_hooks.py
+"""
+
+import fnmatch
+import json
+import os
+import sys
+
+# ---------------------------
+# Role-based edit permissions
+# ---------------------------
+# NOTE:
+# - Keep this minimal - it's a safety guard, not a comprehensive ACL.
+# - If in doubt, fix the role in state.yaml before editing, don't expand permissions.
+
+ROLE_EDIT_ALLOW = {
+
+    # Iris
+
+    "Iris": [
+
+        "vision.md",
+
+        "plan.md",
+
+        ".vibe/**",
+
+    ],
+
+    # Coding Agent (Claude Code / Codex)
+
+    "Coding Agent (Claude Code / Codex)": [
+
+        "src/*",
+
+        "tests/*",
+
+        "**/*.test.*",
+
+        "**/__tests__/*",
+
+        ".vibe/project_state.yaml",
+
+        ".vibe/sessions/*.yaml",
+
+        ".vibe/state.yaml",
+
+        ".vibe/test-results.log",
+
+    ],
+
+}
+
+# Files that are always allowed regardless of role
+ALWAYS_ALLOW = [
+
+    ".vibe/project_state.yaml",
+
+    ".vibe/sessions/*.yaml",
+
+    ".vibe/state.yaml",
+
+]
+
+
+def project_root() -> str:
+    """Get project root from CLAUDE_PROJECT_DIR or current directory."""
+    return os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+
+
+def read_current_role_from_file(path: str) -> str:
+    """Read current_role from a YAML file (line-based parsing)."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if s.startswith("current_role:"):
+                    return s.split(":", 1)[1].strip().strip('"').strip("'")
+    except FileNotFoundError:
+        return ""
+    return ""
+
+
+def resolve_current_role(root: str) -> str:
+    """Resolve current_role from session state or legacy state.yaml.
+
+    Resolution order:
+    1. VIBEFLOW_SESSION env var → .vibe/sessions/<session>.yaml
+    2. Fallback: .vibe/state.yaml (backward compat with v3)
+    """
+    session_id = os.environ.get("VIBEFLOW_SESSION")
+    if session_id:
+        session_path = os.path.join(root, ".vibe", "sessions", f"{session_id}.yaml")
+        role = read_current_role_from_file(session_path)
+        if role:
+            return role
+
+    # Fallback to legacy state.yaml
+    state_path = os.path.join(root, ".vibe", "state.yaml")
+    return read_current_role_from_file(state_path)
+
+
+def _normalize(s: str) -> str:
+    """Strip leading ./ without eating .vibe-style dotted directories."""
+    if s.startswith("./"):
+        return s[2:]
+    return s
+
+
+def match_any(path: str, patterns: list) -> bool:
+    """Check if path matches any of the given glob patterns."""
+    p = _normalize(path)
+    for pat in patterns:
+        np = _normalize(pat)
+        if fnmatch.fnmatch(p, np):
+            return True
+        # Also try matching with ** prefix for nested paths
+        if fnmatch.fnmatch(p, f"**/{np}"):
+            return True
+    return False
+
+
+def get_target_paths(tool_name: str, tool_input: dict) -> list:
+    """Extract target file paths from tool input."""
+    # Claude Code hook input varies by tool, pick up common keys
+    if tool_name in ("Write", "Edit", "MultiEdit", "Read"):
+        p = tool_input.get("file_path") or tool_input.get("path") or ""
+        return [p] if p else []
+
+    # Fallback for batch operations
+    paths = []
+    for k in ("file_paths", "paths"):
+        v = tool_input.get(k)
+        if isinstance(v, list):
+            paths.extend([str(x) for x in v])
+    return paths
+
+
+def block(msg: str) -> None:
+    """Print error message and exit with code 2 to block tool call."""
+    print(msg, file=sys.stderr)
+    # exit code 2: blocks PreToolUse tool call (Claude Code specification)
+    sys.exit(2)
+
+
+def main() -> None:
+    try:
+        payload = json.load(sys.stdin)
+    except Exception:
+        # If hook input is broken, don't stop development - pass through
+        sys.exit(0)
+
+    tool_name = payload.get("tool_name", "")
+    tool_input = payload.get("tool_input", {}) or {}
+
+    # Only guard write operations (blocking Read would be inconvenient)
+    if tool_name not in ("Write", "Edit", "MultiEdit"):
+        sys.exit(0)
+
+    root = project_root()
+    role = resolve_current_role(root)
+
+    # Default to Iris (most restrictive) when role is unknown
+    if not role:
+        role = "Iris"
+
+    allow = ROLE_EDIT_ALLOW.get(role, [])
+
+    # Code file patterns — Iris must NEVER write these
+    CODE_PATTERNS = [
+        "src/*", "src/**", "lib/*", "lib/**", "app/*", "app/**",
+        "tests/*", "tests/**", "test/*", "test/**",
+        "**/*.test.*", "**/*.spec.*",
+        "*.py", "*.ts", "*.js", "*.tsx", "*.jsx", "*.go", "*.rs",
+        "*.css", "*.scss", "*.html", "*.vue", "*.svelte",
+    ]
+
+    targets = get_target_paths(tool_name, tool_input)
+
+    for t in targets:
+        # Skip if path couldn't be extracted (edge cases)
+        if not t:
+            continue
+
+        if match_any(t, ALWAYS_ALLOW):
+            continue
+
+        # Iris-specific: block code file writes with workflow guidance
+        if role == "Iris" and match_any(t, CODE_PATTERNS):
+            block(
+                f"[VibeFlow AccessGuard — ワークフロー違反]\n"
+                f"Iris はコードファイル '{t}' を直接編集できません。\n\n"
+                f"VibeFlow のプロセスに従ってください:\n"
+                f"  1) Issue を作成または確認する\n"
+                f"  2) Coding Agent に dispatch する (Claude Code / Codex)\n"
+                f"  3) TDD でテスト → 実装 → リファクタリング\n"
+                f"  4) Cross-Review (Codex) を実施\n\n"
+                f"「簡単だから自分でやる」は禁止です。"
+            )
+
+        if not match_any(t, allow):
+            block(
+                f"[VibeFlow AccessGuard]\n"
+                f"current_role='{role}' では '{t}' を編集できません。\n"
+                f"許可パターン: {allow}\n\n"
+                f"対処:\n"
+                f"  1) セッション状態ファイル (.vibe/sessions/*.yaml) の current_role を正しいロールに遷移してから\n"
+                f"  2) そのロールのステップで編集してください。\n"
+            )
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

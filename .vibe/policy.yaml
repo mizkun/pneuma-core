@@ -1,0 +1,44 @@
+# VibeFlow Role-Based Access Policy
+# Generated from core/schema/policy.yaml — do not edit manually
+roles:
+  iris:
+    display_name: Iris
+    can_read:
+    - vision.md
+    - .vibe/spec/**
+    - plan.md
+    - .vibe/context/**
+    - .vibe/references/**
+    - .vibe/archive/**
+    - .vibe/project_state.yaml
+    - .vibe/sessions/*.yaml
+    - .vibe/state.yaml
+    - src/**
+    can_write:
+    - vision.md
+    - plan.md
+    - .vibe/**
+    enforcement: hard
+  coding_agent:
+    display_name: Coding Agent (Claude Code / Codex)
+    can_read:
+    - .vibe/spec/**
+    - src/**
+    - tests/**
+    - .vibe/project_state.yaml
+    - .vibe/sessions/*.yaml
+    - .vibe/state.yaml
+    can_write:
+    - src/*
+    - tests/*
+    - '**/*.test.*'
+    - '**/__tests__/*'
+    - .vibe/project_state.yaml
+    - .vibe/sessions/*.yaml
+    - .vibe/state.yaml
+    - .vibe/test-results.log
+    enforcement: hard
+always_allow:
+- .vibe/project_state.yaml
+- .vibe/sessions/*.yaml
+- .vibe/state.yaml
