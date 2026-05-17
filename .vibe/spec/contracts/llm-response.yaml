@@ -1,0 +1,8 @@
+id: llm-response
+schema_ref: pneuma_core.protocols.llm.LLMResponse
+producers:
+  - src/pneuma_core/protocols/llm.py
+  - src/pneuma_core/llm/claude.py
+consumers:
+  - src/pneuma_core/memory/consolidator.py
+story: protocols

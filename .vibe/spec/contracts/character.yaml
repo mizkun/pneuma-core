@@ -1,0 +1,16 @@
+id: character
+schema_ref: pneuma_core.models.character.Character
+producers:
+  - src/pneuma_core/models/character.py
+  - src/pneuma_core/character_sheet.py
+  - src/pneuma_core/storage/sqlite.py
+  - src/pneuma_core/storage/in_memory.py
+consumers:
+  - src/pneuma_core/protocols/storage.py
+  - src/pneuma_core/protocols/middleware.py
+  - src/pneuma_core/models/entity.py
+  - src/pneuma_core/runtime/engine.py
+  - src/pneuma_core/runtime/prompt_builder.py
+  - src/pneuma_core/runtime/prompt_cache.py
+  - src/pneuma_core/runtime/context_assembler.py
+story: models

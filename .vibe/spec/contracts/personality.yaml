@@ -1,0 +1,12 @@
+id: personality
+schema_ref: pneuma_core.models.personality.Personality
+producers:
+  - src/pneuma_core/models/personality.py
+  - src/pneuma_core/character_sheet.py
+consumers:
+  - src/pneuma_core/models/character.py
+  - src/pneuma_core/models/entity.py
+  - src/pneuma_core/emotion/baseline.py
+  - src/pneuma_core/memory/search.py
+  - src/pneuma_core/runtime/engine.py
+story: models

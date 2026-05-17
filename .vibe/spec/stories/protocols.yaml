@@ -1,0 +1,26 @@
+id: protocols
+one_liner: |
+  LLM・埋め込み・記憶ストア・ストレージ・タスク・音声・ミドルウェアの抽象
+  インターフェース（Protocol）を集約する層。実装ではなく契約だけを定義する。
+invariants:
+  - id: protocol-no-implementation
+    text: "protocols 配下は Protocol 定義とリクエスト/レスポンス用 dataclass のみを持ち、具体実装を持たない。"
+    source_ref: src/pneuma_core/protocols/__init__.py
+  - id: llm-request-validation
+    text: "LLMRequest と ModelConfig は temperature が 0.0〜2.0、max_tokens が正でなければ生成できない。"
+    test: tests/test_llm_adapter.py
+    source_ref: src/pneuma_core/protocols/llm.py:LLMRequest
+  - id: storage-backend-surface
+    text: "StorageBackend は Character/Memory/Goals/State/ChangeLog/Todo/Relation の CRUD を 1 つの統合インターフェースで提供する。"
+    source_ref: src/pneuma_core/protocols/storage.py:StorageBackend
+  - id: memory-store-separated
+    text: "MemoryStore は StorageBackend から分離され、ベクトル類似検索 (find_similar_episodic) を含む記憶専用インターフェースを定義する。"
+    source_ref: src/pneuma_core/protocols/memory_store.py:MemoryStore
+  - id: middleware-two-hooks
+    text: "Middleware は pre_process と post_process の 2 フックを持ち、PipelineContext を介して状態を共有する。"
+    source_ref: src/pneuma_core/protocols/middleware.py:Middleware
+source_files:
+  - src/pneuma_core/protocols/
+depends_on:
+  - models
+  - task

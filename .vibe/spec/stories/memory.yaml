@@ -1,0 +1,43 @@
+id: memory
+one_liner: |
+  キャラクターが「思い出す」「学習する」を実現する記憶レイヤー。ハイブリッド
+  スコアリング検索・コサイン類似度・会話からのエピソード/意味記憶の統合を担う。
+invariants:
+  - id: cosine-dimension-match
+    text: "cosine_similarity はベクトル次元が異なれば ValueError、ゼロベクトルなら 0.0 を返す。"
+    test: tests/test_memory_search.py
+    source_ref: src/pneuma_core/memory/similarity.py:cosine_similarity
+  - id: personality-biased-recall
+    text: "神経症傾向が高いほど importance 重み β が増し、開放性が高いほど検索の実効 top_k が広がる。"
+    test: tests/test_memory_search.py
+    source_ref: src/pneuma_core/memory/search.py:MemorySearchEngine
+    rationale: |
+      score = α×similarity + β×importance + γ×recency。α/γ は定数、β のみ
+      neuroticism で変動。openness は重みでなく多様性（top_k）に効く。
+  - id: negativity-bias
+    text: "感情価が負のエピソード記憶には、神経症傾向に比例した負バイアスがスコアに加算される。"
+    test: tests/test_memory_search.py
+    source_ref: src/pneuma_core/memory/search.py:MemorySearchEngine
+  - id: recency-decay
+    text: "エピソード記憶の recency は exp(-λ×経過日数) で減衰し、意味記憶は recency=1.0 固定。"
+    test: tests/test_memory_search.py
+    source_ref: src/pneuma_core/memory/search.py:MemorySearchEngine
+  - id: no-embedding-zero-score
+    text: "embedding が未生成 (None) の記憶はスコア 0.0 となり検索対象から実質除外される。"
+    test: tests/test_memory_search.py
+    source_ref: src/pneuma_core/memory/search.py:MemorySearchEngine
+  - id: importance-threshold
+    text: "consolidate は importance が閾値 (既定 0.6) 未満のエピソードを長期記憶に保存しない。"
+    source_ref: src/pneuma_core/memory/consolidator.py:MemoryConsolidator
+  - id: consolidation-pipeline-order
+    text: "記憶統合は LLM 抽出→重要度フィルタ→数量制限→埋め込み生成→重複除外→保存の順で進む。"
+    source_ref: src/pneuma_core/memory/consolidator.py:MemoryConsolidator
+  - id: duplicate-filter
+    text: "既存記憶と類似度が duplicate_similarity_threshold (既定 0.95) 以上の抽出記憶は重複として保存しない。"
+    source_ref: src/pneuma_core/memory/consolidator.py:MemoryConsolidator
+source_files:
+  - src/pneuma_core/memory/
+depends_on:
+  - models
+  - protocols
+  - llm

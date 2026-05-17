@@ -1,0 +1,32 @@
+id: emotion
+one_liner: |
+  Big Five 性格を PAD ベースラインに変換し、指数減衰でベースラインへ回帰させ、
+  PAD 値を離散感情ラベルへマッピングする感情計算ロジック。
+invariants:
+  - id: personality-determines-pad-baseline
+    text: "PAD ベースラインは Big Five の線形結合で決まり、結果は [-1.0, 1.0] にクランプされる。"
+    test: tests/test_emotion.py
+    source_ref: src/pneuma_core/emotion/baseline.py:personality_to_pad_baseline
+    rationale: |
+      P=0.21E+0.59A+0.19(1-N), A=0.15O+0.30(1-A)+0.57N,
+      D=0.25O+0.17C+0.60E-0.32A という固定係数モデル。
+  - id: decay-converges-to-baseline
+    text: "exponential_decay は経過時間とともに感情値をベースラインへ単調に近づけ、half_life で半減する。"
+    test: tests/test_emotion.py
+    source_ref: src/pneuma_core/emotion/decay.py:exponential_decay
+  - id: decay-half-life-positive
+    text: "half_life が 0 以下なら exponential_decay は ValueError を送出する。"
+    test: tests/test_emotion.py
+    source_ref: src/pneuma_core/emotion/decay.py:exponential_decay
+  - id: decay-no-elapsed-noop
+    text: "経過秒数が 0 以下なら exponential_decay は現在値をそのまま返す。"
+    test: tests/test_emotion.py
+    source_ref: src/pneuma_core/emotion/decay.py:exponential_decay
+  - id: pad-octant-mapping
+    text: "全軸の絶対値が threshold 未満なら「中立」、それ以外は 8 オクタント表で最も近い離散ラベルを返す。"
+    test: tests/test_emotion.py
+    source_ref: src/pneuma_core/emotion/pad_mapping.py:pad_to_emotion_label
+source_files:
+  - src/pneuma_core/emotion/
+depends_on:
+  - models

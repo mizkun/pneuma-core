@@ -1,0 +1,11 @@
+id: change-record
+schema_ref: pneuma_core.models.change_record.ChangeRecord
+producers:
+  - src/pneuma_core/models/change_record.py
+  - src/pneuma_core/runtime/engine.py
+  - src/pneuma_core/storage/sqlite.py
+  - src/pneuma_core/storage/in_memory.py
+consumers:
+  - src/pneuma_core/models/message.py
+  - src/pneuma_core/protocols/storage.py
+story: models

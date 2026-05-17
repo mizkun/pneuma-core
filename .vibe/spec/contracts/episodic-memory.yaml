@@ -1,0 +1,17 @@
+id: episodic-memory
+schema_ref: pneuma_core.models.memory.EpisodicMemory
+producers:
+  - src/pneuma_core/models/memory.py
+  - src/pneuma_core/memory/consolidator.py
+  - src/pneuma_core/memory/semantic_consolidator.py
+  - src/pneuma_core/storage/sqlite.py
+  - src/pneuma_core/storage/in_memory.py
+consumers:
+  - src/pneuma_core/protocols/memory_store.py
+  - src/pneuma_core/protocols/storage.py
+  - src/pneuma_core/protocols/middleware.py
+  - src/pneuma_core/memory/search.py
+  - src/pneuma_core/runtime/engine.py
+  - src/pneuma_core/runtime/prompt_builder.py
+  - src/pneuma_core/runtime/session_end_pipeline.py
+story: models

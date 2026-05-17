@@ -1,0 +1,68 @@
+id: runtime
+one_liner: |
+  キャラクターを実際に動かす中核ランタイム。メッセージ処理パイプライン・感情
+  エンジン・プロンプト構築/キャッシュ・セッション管理・日記/ユーザーコンテキスト
+  処理・先回り発話など、他ドメインを統合する最も大きく密結合な層。
+invariants:
+  - id: pipeline-order
+    text: "process_message は 状態ロード→記憶検索→プロンプト構築→LLM 生成→感情評価→出力 の固定順で進む。"
+    test: tests/test_runtime_engine.py
+    source_ref: src/pneuma_core/runtime/engine.py:RuntimeEngine
+  - id: degraded-on-subsystem-failure
+    text: "記憶検索やミドルウェアや LLM 生成の失敗は例外を握りつぶし、SystemMessage を付けたフォールバック応答で処理を継続する（LLMTimeoutError は除き再送出）。"
+    source_ref: src/pneuma_core/runtime/engine.py:RuntimeEngine
+    rationale: |
+      個々のサブシステム障害で会話全体を止めないための degraded-mode 設計。
+  - id: emotion-decay-before-turn
+    text: "前回更新からの経過が一定秒以上なら、ターン処理前に感情を性格ベースラインへ減衰させる。"
+    source_ref: src/pneuma_core/runtime/engine.py:RuntimeEngine
+  - id: emotion-saved-for-next-turn
+    text: "感情評価は背景タスクで実行され、結果は次ターンのために保存される（非診断モード時）。"
+    source_ref: src/pneuma_core/runtime/engine.py:RuntimeEngine
+  - id: structured-response-fallback
+    text: "LLM 応答が speech/thought/action の構造化 JSON でなければ、生テキスト全体を speech として扱う。"
+    source_ref: src/pneuma_core/runtime/response_parser.py:parse_structured_response
+  - id: prompt-cache-static-dynamic-split
+    text: "PromptCache は変化しない静的セクションを再利用し、動的セクションのみ毎回再構築する。"
+    source_ref: src/pneuma_core/runtime/prompt_cache.py:PromptCache
+  - id: context-three-stages
+    text: "ContextAssembler は文脈を Always(Identity) / Relevant(State) / On-Demand の 3 段階に分類して注入する。"
+    source_ref: src/pneuma_core/runtime/context_assembler.py:ContextAssembler
+  - id: history-summarized-on-overflow
+    text: "会話履歴が limit を超えると HistorySummarizer が LLM 要約で圧縮し、過去要約と統合する。"
+    source_ref: src/pneuma_core/runtime/history_summarizer.py:HistorySummarizer
+  - id: proactive-quiet-hours
+    text: "ProactiveEngine は quiet hours 中・1 日上限到達時には先回り発話しない。"
+    source_ref: src/pneuma_core/runtime/proactive.py:ProactiveEngine
+  - id: user-context-update-risk-tiers
+    text: "ユーザーコンテキスト更新は LOW=自動適用 / MEDIUM=自動適用+報告 / HIGH=承認待ち提案 のリスク階層で扱う。"
+    source_ref: src/pneuma_core/runtime/user_context_consolidator.py:UserContextConsolidator
+  - id: user-context-writer-allowlist
+    text: "UserContextWriter は許可ファイル名 / projects/ プレフィックスのみ書き込み、適用後に git commit する。"
+    source_ref: src/pneuma_core/runtime/user_context_writer.py:UserContextWriter
+  - id: character-sheet-required-fields
+    text: "CharacterSheet の YAML パースは name/id/personality/values が欠ければ ValueError を送出する。"
+    test: tests/test_character_sheet.py
+    source_ref: src/pneuma_core/character_sheet.py:CharacterSheet
+  - id: vault-path-env
+    text: "vault のパスは PNEUMA_VAULT_PATH 環境変数に従い、未設定時は ./vault にフォールバックする。"
+    source_ref: src/pneuma_core/vault.py:get_vault_path
+  - id: diary-trigger-keywords
+    text: "DiaryWriter / DiaryCoaching はトリガーキーワードがユーザー発言に含まれる時のみ起動する。"
+    source_ref: src/pneuma_core/runtime/diary_writer.py:DiaryWriter
+  - id: session-end-integrated-analysis
+    text: "SessionEndPipeline はセッション終了時に LLM 一回で episodic/semantic/relationship を統合更新する。"
+    source_ref: src/pneuma_core/runtime/session_end_pipeline.py:SessionEndPipeline
+source_files:
+  - src/pneuma_core/runtime/
+  - src/pneuma_core/character_sheet.py
+  - src/pneuma_core/vault.py
+  - src/pneuma_core/exceptions.py
+  - src/pneuma_core/__init__.py
+depends_on:
+  - models
+  - protocols
+  - emotion
+  - llm
+  - memory
+  - storage

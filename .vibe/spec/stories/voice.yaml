@@ -1,0 +1,12 @@
+id: voice
+one_liner: |
+  音声合成 (TTS) と音声認識 (STT) のプロトコルへの後方互換 re-export を持つ
+  ドメイン。実体のインターフェースは protocols.voice にある。
+invariants:
+  - id: voice-reexport-only
+    text: "voice/stt.py と voice/tts.py は canonical な protocols.voice の STTService / TTSAdapter を再エクスポートするだけで独自実装を持たない。"
+    source_ref: src/pneuma_core/voice/__init__.py
+source_files:
+  - src/pneuma_core/voice/
+depends_on:
+  - protocols

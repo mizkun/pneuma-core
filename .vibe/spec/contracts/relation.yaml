@@ -1,0 +1,15 @@
+id: relation
+schema_ref: pneuma_core.models.relation.Relation
+producers:
+  - src/pneuma_core/models/relation.py
+  - src/pneuma_core/runtime/user_context.py
+  - src/pneuma_core/storage/sqlite.py
+  - src/pneuma_core/storage/in_memory.py
+consumers:
+  - src/pneuma_core/models/entity.py
+  - src/pneuma_core/protocols/storage.py
+  - src/pneuma_core/runtime/prompt_builder.py
+  - src/pneuma_core/runtime/prompt_cache.py
+  - src/pneuma_core/runtime/context_assembler.py
+  - src/pneuma_core/runtime/session_end_pipeline.py
+story: models

@@ -1,0 +1,17 @@
+id: task
+one_liner: |
+  外部タスク管理（TickTick 準拠）のデータモデルと、TaskBackend プロトコルへの
+  後方互換 re-export を持つドメイン。
+invariants:
+  - id: task-status-ticktick
+    text: "Task.status は TickTick 準拠で 0=Normal / 2=Completed、priority は 0/1/3/5 を用いる。"
+    source_ref: src/pneuma_core/task/models.py:Task
+  - id: task-update-partial
+    text: "TaskUpdate は None のフィールドを更新対象外とする部分更新リクエストである。"
+    source_ref: src/pneuma_core/task/models.py:TaskUpdate
+  - id: task-backend-reexport
+    text: "task/backend.py は canonical な protocols.task.TaskBackend を再エクスポートするだけの後方互換層。"
+    source_ref: src/pneuma_core/task/backend.py
+source_files:
+  - src/pneuma_core/task/
+depends_on: []

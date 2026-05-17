@@ -1,0 +1,17 @@
+id: llm-request
+schema_ref: pneuma_core.protocols.llm.LLMRequest
+producers:
+  - src/pneuma_core/memory/consolidator.py
+  - src/pneuma_core/memory/semantic_consolidator.py
+  - src/pneuma_core/runtime/engine.py
+  - src/pneuma_core/runtime/emotion_engine.py
+  - src/pneuma_core/runtime/history_summarizer.py
+  - src/pneuma_core/runtime/proactive.py
+  - src/pneuma_core/runtime/diary_writer.py
+  - src/pneuma_core/runtime/diary_processor.py
+  - src/pneuma_core/runtime/session_end_pipeline.py
+  - src/pneuma_core/runtime/user_context_consolidator.py
+consumers:
+  - src/pneuma_core/protocols/llm.py
+  - src/pneuma_core/llm/claude.py
+story: protocols

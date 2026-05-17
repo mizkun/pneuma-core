@@ -1,0 +1,8 @@
+id: message-input
+schema_ref: pneuma_core.models.message.MessageInput
+producers:
+  - src/pneuma_core/models/message.py
+consumers:
+  - src/pneuma_core/protocols/middleware.py
+  - src/pneuma_core/runtime/engine.py
+story: models

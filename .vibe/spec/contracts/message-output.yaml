@@ -1,0 +1,8 @@
+id: message-output
+schema_ref: pneuma_core.models.message.MessageOutput
+producers:
+  - src/pneuma_core/models/message.py
+  - src/pneuma_core/runtime/engine.py
+consumers:
+  - src/pneuma_core/protocols/middleware.py
+story: models

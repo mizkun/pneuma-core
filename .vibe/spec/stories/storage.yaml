@@ -1,0 +1,27 @@
+id: storage
+one_liner: |
+  StorageBackend / MemoryStore プロトコルの具体実装。インメモリ実装（テスト用）
+  と SQLite 永続化実装の 2 種を提供する。
+invariants:
+  - id: backend-implements-protocol
+    text: "InMemoryStorageBackend と SQLiteStorageBackend は StorageBackend プロトコルの全 CRUD メソッドを実装する。"
+    test: tests/test_storage.py
+    source_ref: src/pneuma_core/storage/in_memory.py:InMemoryStorageBackend
+  - id: sqlite-schema-migration
+    text: "SQLiteStorageBackend は initialize 時にスキーマ migration を実行してからクエリを受け付ける。"
+    test: tests/test_sqlite_storage.py
+    source_ref: src/pneuma_core/storage/sqlite.py:SQLiteStorageBackend
+  - id: similarity-search-via-cosine
+    text: "find_similar_memories は memory.similarity の cosine_similarity を用い、閾値以上の記憶のみ返す。"
+    test: tests/test_storage.py
+    source_ref: src/pneuma_core/storage/sqlite.py:SQLiteStorageBackend
+  - id: roundtrip-fidelity
+    text: "保存したモデルを取得すると、値域・型を保ったまま同等のオブジェクトとして復元できる。"
+    test: tests/test_sqlite_storage.py
+    source_ref: src/pneuma_core/storage/sqlite.py:SQLiteStorageBackend
+source_files:
+  - src/pneuma_core/storage/
+depends_on:
+  - models
+  - protocols
+  - memory

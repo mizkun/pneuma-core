@@ -1,0 +1,30 @@
+id: llm
+one_liner: |
+  Anthropic Claude による応答生成と OpenAI による埋め込み生成の具体アダプタ。
+  protocols の LLMAdapter / EmbeddingService を外部 SDK で実装する。
+invariants:
+  - id: claude-retry-policy
+    text: "ClaudeAdapter は 429 と 5xx のみを指数バックオフで最大 MAX_RETRIES 回リトライする。"
+    test: tests/test_claude_adapter.py
+    source_ref: src/pneuma_core/llm/claude.py:_is_retryable
+  - id: claude-timeout-wrapped
+    text: "Anthropic API のタイムアウトは pneuma 独自の LLMTimeoutError に変換して送出する。"
+    test: tests/test_claude_adapter.py
+    source_ref: src/pneuma_core/llm/claude.py:ClaudeAdapter
+  - id: claude-prompt-cache-blocks
+    text: "system_prompt_cached が指定された場合のみ、静的セクションに cache_control を付けた content ブロック配列を組み立てる。"
+    test: tests/test_prompt_caching_api.py
+    source_ref: src/pneuma_core/llm/claude.py:ClaudeAdapter
+  - id: embedding-empty-zero-vector
+    text: "embed_batch は空文字列を API に送らず、ゼロベクトルで埋めて入力と同じ index 整合を保つ。"
+    test: tests/test_embedding.py
+    source_ref: src/pneuma_core/llm/embedding.py:OpenAIEmbeddingService
+  - id: api-key-from-env
+    text: "from_env は API キー環境変数が未設定なら ValueError を送出する。"
+    test: tests/test_embedding.py
+    source_ref: src/pneuma_core/llm/embedding.py:OpenAIEmbeddingService
+source_files:
+  - src/pneuma_core/llm/
+depends_on:
+  - protocols
+  - models

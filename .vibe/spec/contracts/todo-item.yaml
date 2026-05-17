@@ -1,0 +1,9 @@
+id: todo-item
+schema_ref: pneuma_core.models.todo.TodoItem
+producers:
+  - src/pneuma_core/models/todo.py
+  - src/pneuma_core/storage/sqlite.py
+  - src/pneuma_core/storage/in_memory.py
+consumers:
+  - src/pneuma_core/protocols/storage.py
+story: models

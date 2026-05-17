@@ -1,0 +1,51 @@
+id: models
+one_liner: |
+  キャラクター・感情・記憶・目標・メッセージなど、全ドメインが共有する frozen
+  dataclass のデータモデル群。値域バリデーションは __post_init__ に集約される。
+invariants:
+  - id: personality-traits-range
+    text: "Big Five の各特性は 0.0〜1.0 の範囲内でなければ Personality を生成できない。"
+    test: tests/test_models_character.py
+    source_ref: src/pneuma_core/models/personality.py:Personality
+    rationale: |
+      性格パラメータは正規化された比率値として扱われ、PAD 変換や記憶検索の
+      重み計算が 0〜1 入力を前提にしている。
+  - id: values-dimensions-range
+    text: "Schwartz 価値観の 4 次元は 0.0〜1.0 の範囲内でなければ Values を生成できない。"
+    source_ref: src/pneuma_core/models/values.py:Values
+  - id: pad-axes-range
+    text: "EmotionalState と Mood の pleasure/arousal/dominance は -1.0〜1.0 の範囲内でなければ生成できない。"
+    test: tests/test_emotion.py
+    source_ref: src/pneuma_core/models/emotion.py:_validate_pad
+  - id: mood-is-ema
+    text: "Mood.update は (1-alpha)*current + alpha*emotion の指数移動平均で新しい Mood を返す。"
+    test: tests/test_emotion.py
+    source_ref: src/pneuma_core/models/emotion.py:Mood
+  - id: episodic-importance-range
+    text: "EpisodicMemory の importance は 0.0〜1.0、emotional_valence は -1.0〜1.0 の範囲内でなければ生成できない。"
+    test: tests/test_models_memory.py
+    source_ref: src/pneuma_core/models/memory.py:EpisodicMemory
+  - id: semantic-confidence-range
+    text: "SemanticMemory の confidence は 0.0〜1.0 の範囲内でなければ生成できない。"
+    test: tests/test_models_memory.py
+    source_ref: src/pneuma_core/models/memory.py:SemanticMemory
+  - id: goal-status-enum
+    text: "Objective.status は active/achieved/abandoned、Task.status は pending/in_progress/completed/abandoned のいずれかでなければならない。"
+    test: tests/test_models_goals.py
+    source_ref: src/pneuma_core/models/goals.py:Objective
+  - id: objective-progress-range
+    text: "Objective.progress は 0.0〜1.0 の範囲内でなければ生成できない。"
+    test: tests/test_models_goals.py
+    source_ref: src/pneuma_core/models/goals.py:Objective
+  - id: message-input-validation
+    text: "MessageInput は content が空でなく、sender_type が human/character/system のいずれかでなければ生成できない。"
+    source_ref: src/pneuma_core/models/message.py:MessageInput
+  - id: entity-type-enum
+    text: "EntityContext.entity_type は character か user のいずれかでなければならず、user では personality/speaking_style は None になる。"
+    source_ref: src/pneuma_core/models/entity.py:EntityContext
+  - id: goaltree-hierarchy-lookup
+    text: "GoalTree は vision_id / objective_id 参照で Vision→Objective→Task の階層を解決できる。"
+    source_ref: src/pneuma_core/models/goals.py:GoalTree
+source_files:
+  - src/pneuma_core/models/
+depends_on: []
