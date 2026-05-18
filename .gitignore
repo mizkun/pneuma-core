@@ -49,6 +49,9 @@ yarn-error.log*
 # Claude Code local settings (not committed)
 .claude/settings.local.json
 
+# Claude Code worktrees (session-scoped, not committed)
+.claude/worktrees/
+
 # Akasha generated artifacts
 .akasha/dashboard.html
 .akasha/contract-map.html
