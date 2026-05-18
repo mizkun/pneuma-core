@@ -1,32 +1,8 @@
-# pneuma-core
+# VibeFlow v6 — Iris-Only Architecture
 
-AIキャラクターに内面（性格・感情・記憶・目標）を与えるコアライブラリ。
+**Language**: Communicate in Japanese (日本語) for all interactions.
 
-## Language
-日本語で対話する。
-
-## Architecture
-- models/ — データモデル（Character, Memory, EmotionalState, Goals）
-- protocols/ — Protocol 定義（LLMAdapter, StorageBackend, MemoryStore 等）
-- runtime/ — ランタイムエンジン（engine.py, prompt_builder, emotion_engine）
-- storage/ — ストレージ実装（SQLite, InMemory）
-- memory/ — 記憶管理（検索、統合、類似度計算）
-- emotion/ — 感情モデル（PAD空間、ベースライン、減衰）
-- llm/ — LLMアダプター（ClaudeAdapter, OpenAIEmbeddingService）
-
-## Development
-- TDD必須（テスト → 実装 → リファクタリング）
-- テスト実行: `.venv/bin/python -m pytest tests/ -x --tb=short`
-- このパッケージは外部サービス（Discord等）に依存しない
-
-## Key Principles
-- 内部表現は数値、プロンプト表現は自然言語
-- Protocol で抽象化、実装は差し替え可能
-- LLMプロバイダーに対して中立（anthropic 直接依存は ClaudeAdapter のみ）
-
-## VibeFlow
-
-このリポジトリは VibeFlow (v6) で開発する。詳細は `.claude/rules/` を参照。
+VibeFlow v6 は Iris-Only アーキテクチャ + 構造化 spec（Story / Contract）。詳細は `.claude/rules/` を参照。
 
 <!-- VF:BEGIN roles -->
 ### Iris
@@ -41,10 +17,39 @@ AIキャラクターに内面（性格・感情・記憶・目標）を与える
 
 <!-- VF:END roles -->
 
-- **構造化 spec**: 仕様は `.vibe/spec/`（Story / Contract）。Agent が書き、PO は書かない。
-- **Issue = Spec 差分**: As-Is → To-Be の差分が Issue。詳細は `rules/spec-loop.md`。
-- **TDD 必須**・Issue 駆動・ロールベース権限。
-- セッション開始時に `rules/session-startup.md` の起動ルーチンを実行する。
-- 主要スキル: `vibeflow-kickoff`（spec 生成 / Bootstrap）、`vibeflow-execute-issue`、`vibeflow-conclude`、`vibeflow-healthcheck` ほか。
+## Architecture
 
-詳細: `rules/workflows.md` | `rules/spec-loop.md` | `rules/safety.md` | `.claude/settings.json`
+```
+ユーザー ── Iris ──┬── Claude Code (実装) └── Codex (レビュー)
+```
+
+## Build / Test
+
+`npm test` | `bash scripts/playwright_smoke.sh`
+
+## Commands
+
+- `/execute-issue <番号>` — Issue を 11-Step で自動完遂
+- `/execute-all` — Open Issues を依存順に一括実行
+- `/conclude` — 会話をまとめ、Plan/Spec/STATUS.md を更新
+- `/patch <issue番号>` — Patch Loop 開始
+- `/progress` — 進捗確認
+- `/healthcheck` — 整合性チェック
+- `/run-e2e` — Playwright E2E テスト実行
+
+## Skills
+
+`vibeflow-execute-issue`, `vibeflow-execute-all`, `vibeflow-kickoff`, `vibeflow-conclude`, `vibeflow-progress`, `vibeflow-healthcheck`, `vibeflow-issue-template`, `vibeflow-tdd`, `vibeflow-ui-smoke`, `vibeflow-ui-explore`
+
+## Startup
+セッション開始時に `rules/session-startup.md` の起動ルーチンを実行すること。
+
+## Critical Rules
+
+1. **TDD**: テストを先に書く (Red-Green-Refactor)
+2. **Issue 駆動**: すべての作業は GitHub Issue に紐づける
+3. **Permission**: ロールベースのファイルアクセス権限を厳守
+4. **State 更新**: 各ステップ後に state を更新
+5. **Incremental**: 小さな単位で継続的にデリバリー
+
+詳細: `rules/workflows.md` | `rules/safety.md` | `rules/project-structure.md` | `.claude/settings.json`

@@ -35,6 +35,16 @@ yarn-error.log*
 
 # Vibe Coding
 .vibe/test-results.log
+.vibe/state.yaml
+.vibe/checkpoints/
+.vibe/archive/
+.vibe/upgrade-reports/
+
+# Backups
+*_backup_*
+.vibe_backup_*
+*.backup.2*
+*.vibeflow.bak
 
 # Claude Code local settings (not committed)
 .claude/settings.local.json
