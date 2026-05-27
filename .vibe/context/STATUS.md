@@ -16,11 +16,27 @@ Phase 0 完了 → M1 本体 Issue 群（5-10 個）を起票 → 着手の順�
 
 ## Active Issues
 
-### Phase 0（type:dev、起票予定）
-- (Issue 起票はこれから。下記 C / C2 / D / E / F / G を起票)
+### Phase 0（起票済み、2026-05-27）
+
+- **#6** Phase0-C: pneuma_core/multi_agent/ 新規設計（N 体会話基盤） — `type:dev` `risk:medium` `qa:manual` `phase:0`
+- **#7** Phase0-C2: テキスト試聴ゲート（面白さ判定） — `type:dev` `risk:low` `qa:manual` `phase:0`（依存: #6 + PO キャラ設定）
+- **#8** Phase0-D: TTS PoC（ElevenLabs 中心、Aivis 横並び実測） — `type:dev` `risk:medium` `qa:manual` `phase:0`（依存: #7 OK 判定後）
+- **#9** Phase0-E: emotion_label 単一定義 contract — `type:dev` `risk:low` `qa:manual` `phase:0`（独立着手可）
+- **#10** Phase0-F: コスト hard limit + Secret + gitleaks — `type:ops` `risk:medium` `qa:manual` `phase:0`（独立着手可）
+- **#11** Phase0-G: Moderation + kill switch + 通報窓口 — `type:dev` `risk:high` `qa:manual` `phase:0`（独立着手可）
+
+### 並列着手可能性
+
+```
+#6 (C) ──→ #7 (C2 ゲート) ──→ #8 (D, TTS PoC) ──→ M1 本体 Issue 群
+#9 (E)  (独立、並列)
+#10 (F) (独立、並列)
+#11 (G) (独立、並列)
+```
 
 ### Development (type:dev)
-- (M1 本体は Phase 0 完了後)
+
+- (M1 本体は Phase 0 完了後に分解・起票)
 
 ### Human Action Required (type:human)
 - キャラ 3 人の設定（名前・性格・関係性・口調・プロファイル）— PO が別セッションで詰める。**Phase 0 C2（テキスト試聴ゲート）の前提**
