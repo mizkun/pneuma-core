@@ -11,8 +11,44 @@ from pneuma_core.emotion.baseline import personality_to_pad_baseline
 from pneuma_core.emotion.decay import exponential_decay
 from pneuma_core.emotion.pad_mapping import pad_to_emotion_label
 from pneuma_core.llm.adapter import LLMAdapter, LLMRequest
-from pneuma_core.models.emotion import EmotionalState
+from pneuma_core.models.emotion import EmotionalState, EmotionLabel
 from pneuma_core.models.personality import Personality
+
+
+def pad_to_label(state: EmotionalState) -> EmotionLabel:
+    """PAD 値から AITuber 6 種感情ラベルにマップ (Issue #9).
+
+    優先順位（上から先に判定）:
+        1. surprised : A > 0.7（極端に高い覚醒）
+        2. sad_lite  : P < -0.1（不快）
+        3. happy     : P > 0.3 かつ A > 0.3
+        4. teasing   : P > 0.3 かつ -0.1 <= A <= 0.3
+        5. embarrassed : 0 < P < 0.3 かつ D > 0.2
+        6. neutral   : 上記以外
+    """
+    p, a, d = state.pleasure, state.arousal, state.dominance
+
+    # 1. surprised (highest arousal wins)
+    if a > 0.7:
+        return EmotionLabel.SURPRISED
+
+    # 2. sad_lite (negative pleasure)
+    if p < -0.1:
+        return EmotionLabel.SAD_LITE
+
+    # 3. happy (high positive pleasure + active)
+    if p > 0.3 and a > 0.3:
+        return EmotionLabel.HAPPY
+
+    # 4. teasing (positive pleasure + calm)
+    if p > 0.3 and -0.1 <= a <= 0.3:
+        return EmotionLabel.TEASING
+
+    # 5. embarrassed (low positive pleasure + high dominance)
+    if 0 < p < 0.3 and d > 0.2:
+        return EmotionLabel.EMBARRASSED
+
+    return EmotionLabel.NEUTRAL
 
 logger = logging.getLogger(__name__)
 

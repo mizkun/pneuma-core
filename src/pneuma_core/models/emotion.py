@@ -1,8 +1,25 @@
-"""PAD 3D emotion model: EmotionalState, Mood."""
+"""PAD 3D emotion model: EmotionalState, Mood, EmotionLabel."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class EmotionLabel(str, Enum):
+    """AITuber 用 6 種の感情ラベル (Issue #9 / Phase 0 E).
+
+    `angry` は採用しない（女子高生雑談での過剰演技回避）。
+
+    TTS / 立ち絵切り替え / ダッシュボード描画の単一ソース・オブ・トゥルース。
+    """
+
+    NEUTRAL = "neutral"
+    HAPPY = "happy"
+    TEASING = "teasing"
+    SURPRISED = "surprised"
+    EMBARRASSED = "embarrassed"
+    SAD_LITE = "sad_lite"
 
 
 def _validate_pad(value: float, name: str) -> float:
