@@ -1,0 +1,29 @@
+---
+name: "source-command-discuss"
+description: "[DEPRECATED] v5 では Iris が常にアクティブです。そのまま話しかけてください。"
+---
+
+# source-command-discuss
+
+Use this skill when the user asks to run the migrated source command `discuss`.
+
+## Command Template
+
+# /discuss — DEPRECATED
+
+> **⚠️ v5 で廃止**: Iris は常にアクティブです。`/discuss` を使わなくても、
+> Iris にそのまま話しかけるだけで Discovery が始まります。
+
+このコマンドが呼ばれた場合、以下のメッセージを表示してください:
+
+```
+⚠️ /discuss は v5 で廃止されました。
+Iris は常にアクティブです。そのまま話しかけてください。
+
+例:
+- 「新機能について壁打ちしたい」
+- 「アーキテクチャの方針を議論」
+- 「プロジェクトのキックオフをしよう」
+```
+
+その後、ユーザーが議論したいトピックがあればそのまま対応してください。
