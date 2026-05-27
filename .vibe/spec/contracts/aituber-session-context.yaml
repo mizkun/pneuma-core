@@ -1,0 +1,7 @@
+id: aituber-session-context
+schema_ref: apps.aituber.backend.scene.SessionContext
+producers:
+  - apps/aituber/
+consumers:
+  - apps/aituber/
+story: aituber-scene

@@ -1,0 +1,28 @@
+id: aituber-observation
+one_liner: |
+  視聴者が各キャラの内部状態（Big Five・PAD・関係性・想起記憶・日記）を観察できる
+  ダッシュボード機能。Pneuma の差別化「パーソナリティ心理学アルゴリズム」を可視化
+  し、ライブ配信だけでは伝わらない深さを補完する橋渡し機能。Firestore の
+  onSnapshot でリアルタイム同期。
+  （Phase 1 で `apps/aituber/backend/observation/` および
+   `apps/aituber/frontend/dashboard/` として実装される）
+invariants:
+  - id: dashboard-realtime-via-firestore
+    text: "ダッシュボードは Firestore の onSnapshot でリアルタイム同期する。自前 WebSocket は使わない。"
+  - id: dashboard-public-readonly
+    text: "ダッシュボードは誰でも閲覧可。書き込みは認証済み backend からのみ（Firestore セキュリティルール）。"
+  - id: dashboard-phase1-scope
+    text: "Phase 1 のダッシュボード公開項目は Big Five（静的）/ PAD（現在）/ 関係性スコア（現在）/ 直近会話ログ / 想起記憶ハイライト / 各キャラの最新日記の 6 つに限定。"
+  - id: dashboard-no-history-in-phase1
+    text: "過去履歴系（時系列グラフ・日記一覧・全記憶リスト）は Phase 1 では公開しない（Phase 2 へ）。"
+  - id: livestream-overlay-required
+    text: "ライブ配信画面そのものにも内面の滲み出し演出（PAD ゲージオーバーレイ・関係性矢印・想起記憶フラッシュテロップ）を組み込む。ダッシュボード別タブだけでは差別化が視聴者に伝わらないため。"
+    rationale: |
+      第三者レビューで「視聴者はダッシュボードを開かない」指摘を受けて、
+      ライブ画面側にも観測可能性の演出を必須化した。
+source_files:
+  - apps/aituber/
+depends_on:
+  - multi-agent
+  - emotion
+  - memory

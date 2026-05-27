@@ -1,0 +1,29 @@
+id: aituber-broadcast
+one_liner: |
+  AITuber 配信の制御層。Web サイト自動配信 + YouTube Live 手動配信（OBS 経由）の
+  2 系統。1 セッション = 15 分（仮、後で調整）の自動起動・終了、配信時間外は
+  「次回配信時刻」の待機画面を表示する。
+  （Phase 1 で `apps/aituber/backend/broadcast/` および
+   `apps/aituber/frontend/livestream/` として実装される）
+invariants:
+  - id: web-auto-broadcast
+    text: "Web サイトは自動で 1 セッション 15 分を起動・終了する。配信時間は cron 的スケジュールで決定される。"
+  - id: web-public-viewable
+    text: "Web 配信は誰でも視聴可。配信時間外は「次回配信時刻」の待機画面を表示する。"
+  - id: youtube-manual-via-obs
+    text: "YouTube Live への配信は OBS でブラウザキャプチャ → 手動運用。バックエンドが直接 YouTube に接続することはない。"
+  - id: session-end-on-time-limit
+    text: "セッションは設定時間に達したら自動終了し、SessionEndPipeline（multi-agent）で記憶・関係性を統合更新する。"
+  - id: session-end-state-persisted
+    text: "セッション終了時、キャラの最終状態（PAD・関係性・新規記憶）は Firestore に永続化され、次回セッションで引き継がれる。"
+  - id: broadcast-circuit-breaker
+    text: "1 セッション当たりの LLM 呼び出し・TTS リクエスト・実行時間が閾値を超えた場合、自動で配信プロセスを kill する（コスト暴走防止）。"
+    rationale: |
+      ADR-0001 のコスト hard limit と整合。バグ（無限ループ・リトライ嵐）で
+      1 セッションが想定の数十倍 LLM を呼ぶ事故を物理的に防ぐ。
+source_files:
+  - apps/aituber/
+depends_on:
+  - multi-agent
+  - aituber-scene
+  - runtime

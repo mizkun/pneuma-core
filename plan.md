@@ -10,7 +10,23 @@ Vision を実現するためのマイルストーン群。各マイルストー�
 
 **ファーストインパクト用の総力戦。Pneuma を AITuber 形式で世間に提示する第一弾。**
 
-実装としては「pneuma-core を使うアプリケーション」を `apps/aituber/` に新設する。pneuma-core 本体（コアエンジン）は据え置き。アプリ層の設計概要は `.vibe/references/aituber-app-design.md` 参照。構造化 spec は Issue 分解時に `.vibe/spec/stories/aituber-*.yaml` として作成する。
+実装としては「pneuma-core を使うアプリケーション」を `apps/aituber/` に新設しつつ、pneuma-core 本体にも **`multi_agent/` モジュール・`storage/firestore.py`・`voice/elevenlabs.py`** を新規追加する（既存の `cross_chat.py` 等 2 体ハードコードの遺跡は捨てる）。技術スタックは `.vibe/decisions/0001-architecture.md`（ADR-0001）で確定。アプリ層の設計概要は `.vibe/references/aituber-app-design.md` 参照。構造化 spec は Issue 分解時に `.vibe/spec/stories/aituber-*.yaml` として作成する。
+
+### M1 着手前の Phase 0（前提固め、1-2 週間）
+
+第三者レビュー（プロダクト戦略・技術アーキ・DevOps）を経て、M1 本体 Issue 化の前に以下を固める：
+
+| # | 内容 | 担当 |
+|---|---|---|
+| **B** | ADR-0001 確定（Firebase + Cloud Run + ElevenLabs + Sonnet/Haiku 使い分け） | Iris ✅完了 |
+| **C** | `pneuma_core/multi_agent/` 新規設計（FloorController + N 体 SessionEndPipeline） | Coding Agent |
+| **C2** | **テキストモード試聴ゲート** — 3 体走らせて PO が面白さ判定（UI / TTS / 立ち絵なし） | Coding Agent + PO |
+| **D** | TTS PoC（ElevenLabs 中心、Aivis 横並び実測） | Coding Agent + PO |
+| **E** | `emotion_label` 単一定義 contract | Iris |
+| **F** | コスト hard limit + Secret 管理 + gitleaks 導入 | PO + Coding Agent |
+| **G** | Moderation + kill switch + 通報窓口 + プライバシーポリシー雛形 | Iris + Coding Agent |
+
+**C2 で「面白くない」判定なら、TTS や UI に進む前に C（multi-agent / FloorController / キャラ設計）に戻る検証ゲート。**
 
 ### Phase 1 — MVP 公開
 
@@ -236,6 +252,23 @@ M2 / M3 / Mx は M1 完了後に並列で着手可能。M4 / M5 は規模拡張�
 1. **ファーストインパクト重視** — 動いたら出すのではなく、バズる絵が揃ったら出す
 2. **公開を完了条件に組み込む** — 「個人開発」で止めない
 3. **両軸を同時に訴求** — シミュ観察型（エンタメ）× パーソナリティ心理学（技術）
-4. **観察ダッシュボードが橋** — エンタメ層と技術層を一つのサイトで繋ぐ
+4. **観察ダッシュボードが橋** — エンタメ層と技術層を一つのサイトで繋ぐ。**ライブ画面そのものに内面の滲み出し演出も組み込む**（PAD ゲージ・関係性矢印・想起記憶フラッシュ）
 5. **規模よりトーンの拡張** — 100 体の社会シミュより、3 体の濃い物語と続編化を優先
 6. **上位存在は環境のみ介入** — キャラ内面への直接干渉はしない（キャラの自律性を守る）
+7. **AI 自律会話で検証する** — 人間が台本を書くのは North Star に反する。Phase 0 C2 のテキスト試聴ゲートで「観たいか」を AI 実行結果で判定する
+
+## ターゲット仮置き
+
+「最初の 100 人」のターゲットは **「AI / プロダクト系で SNS 発信が活発な技術者・クリエイター層」**。Vtuber ファン / きらら系ファンは "後から取りに行く" 扱い。
+
+## リリース判定基準
+
+M1 完了条件 = 以下すべて：
+- Phase 0 C2 で PO 試聴 OK 判定
+- 3 本の 15 分セッション録画があり、PO 以外の 3 人が試聴して 1 セッション中に 1 回以上「観たい」と思った場面がある
+- ダッシュボード + ライブ画面オーバーレイで内面の滲み出しが視聴者に伝わる
+- デッドライン（仮置き）: 2026-09-30
+
+## マネタイズ判断のチェックポイント
+
+M3（24/7 化）着手前に、月固定費（LLM + TTS + Cloud Run + その他）が **5 万円** を超えたら **収益化議論を必ず実施**。先送りすると M3 が永遠に着手できないマイルストーンになる。

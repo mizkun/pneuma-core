@@ -2,30 +2,31 @@
 
 ## Last Updated
 
-2026-05-27 — M1 を AITuber プラットフォーム MVP として再定義、TTS 選定方針確定
+2026-05-27 — ADR-0001 確定、Phase 0 構造に再編、構造化 spec スケルトン作成
 
 ## Current Focus
 
-**M1「部室世界」を AITuber プラットフォーム MVP として実装フェーズに入る**
+**Phase 0「M1 着手前の前提固め」を進める**
 
-ヒアリングを通じて M1 のスコープと設計判断が確定。pneuma-core（既存・完成済み）を依存ライブラリとして、新しいアプリケーション `apps/aituber/` を構築する。
+第三者レビュー（プロダクト戦略・技術アーキテクチャ・DevOps/セキュリティ）を経て、M1 を直接 Issue 化する前に技術的前提と検証ゲートを Phase 0 として実施する。
 
-主要要素：
-- 3 体の AI キャラ（女子高生・放送部）が部室で会話（紙芝居 × 定点カメラ）
-- 1 セッション = 15 分、Web サイトで自動配信、YouTube Live は OBS 経由で手動配信
-- ダッシュボード（Web サイト上、観察 UI）で内部状態（PAD・Big Five・関係性・記憶・日記）を可視化
-- TTS で音声出力（MUST、サービス選定は別 Research）
-- PO 介入はセッション開始時の自由テキストコンテクスト注入のみ
+Phase 0 完了 → M1 本体 Issue 群（5-10 個）を起票 → 着手の順。
+
+技術スタックは `.vibe/decisions/0001-architecture.md`（ADR-0001）で確定：Firebase Hosting + Auth + Firestore + Storage + Cloud Run (Python) + ElevenLabs Multilingual/v3 + Sonnet/Haiku 使い分け + Anthropic safety + 30 秒配信遅延。
 
 ## Active Issues
 
+### Phase 0（type:dev、起票予定）
+- (Issue 起票はこれから。下記 C / C2 / D / E / F / G を起票)
+
 ### Development (type:dev)
-- (まだ Issue を切っていない。次は M1 を 5〜10 個の Issue に分解する)
+- (M1 本体は Phase 0 完了後)
 
 ### Human Action Required (type:human)
-- キャラ 3 人の設定（名前・性格・関係性・口調・プロファイル）— PO が別セッションで詰める
+- キャラ 3 人の設定（名前・性格・関係性・口調・プロファイル）— PO が別セッションで詰める。**Phase 0 C2（テキスト試聴ゲート）の前提**
 - 立ち絵 18〜24 パターン + 背景画像の生成 — PO の並列タスク（キャラ設定確定後）
-- TTS 採用候補 3 声のライセンス確認（商用 YouTube Live / 収益化 / アーカイブ / 切り抜き / SNS 転載 / 将来 IP 展開すべて含めて）— PO 判断
+- TTS 採用候補（ElevenLabs Multilingual/v3）のライセンス確認 — 商用 YouTube Live / 収益化 / アーカイブ / 切り抜き / 将来 IP 展開すべて含めて
+- ElevenLabs アカウント開設 + Anthropic / Firebase / GCP アカウント整備 — Phase 0 F に必要
 
 ### Pending Discussion (type:discussion)
 - なし
@@ -33,18 +34,24 @@
 ## Recent Decisions
 
 - 2026-05-27: **M1 を AITuber プラットフォーム MVP として再定義** — ウズメ版仕様 + ヒアリングで決定
-- 2026-05-27: **ビジュアル方針を「ドット絵 × 俯瞰」から「静的立ち絵 × 感情パターン差し替え × 定点カメラ（紙芝居）」へ変更** — vision.md「ビジュアルの進化」を更新
-- 2026-05-27: **PO 介入は「セッション開始時のコンテクスト注入」のみ** — 「天啓」「夢誘導」は撤回、上位存在は環境のみに介入する世界観で統一
-- 2026-05-27: **TTS は MUST** — 日本語クオリティ最高・低レイテンシ・商用 OK。サービス選定は別 Deep Research タスク
-- 2026-05-27: **配信構造 = Web サイト自動 + YouTube Live 手動（OBS 経由）** — Web は誰でも視聴可、配信時間外は「次回配信時刻」の待機画面
+- 2026-05-27: **ビジュアル方針を「ドット絵 × 俯瞰」から「静的立ち絵 × 感情パターン差し替え × 定点カメラ（紙芝居）」へ変更**
+- 2026-05-27: **PO 介入は「セッション開始時のコンテクスト注入」のみ** — 上位存在は環境のみに介入する世界観で統一
+- 2026-05-27: **TTS は MUST** — Deep Research で ElevenLabs Multilingual/v3 を採用候補に決定（後の ADR で確定）
+- 2026-05-27: **配信構造 = Web サイト自動 + YouTube Live 手動（OBS 経由）**
 - 2026-05-27: **1 配信 = 1 セッション = 15 分** — 記憶引き継ぎは pneuma-core 既存の SessionEndPipeline で
 - 2026-05-27: **ダッシュボード Phase 1 スコープ** — Big Five / PAD / 関係性 / 直近会話 / 想起記憶 / 最新日記。過去履歴系は Phase 2 へ
-- 2026-05-27: **モノレポ構造** — pneuma-core は据え置き、`apps/aituber/` を新設。OSS 公開時は pneuma-core だけ pip 配布
+- 2026-05-27: **モノレポ構造** — pneuma-core は据え置き、`apps/aituber/` を新設
 - 2026-05-27: **Vision の North Star は維持** — AITuber は形式の一つ、世界 IP 化が北極星
-- 2026-05-27: **M1 から外したもの** — キャラ SNS 能動発信（M2 へ）、真の 24/7 連続稼働（M3 へ）、Live2D / ドット絵俯瞰 / 移動の概念（M4 以降）、紹介動画（不要）、技術記事・X 運用（PO 個人タスク）
-- 2026-05-27: **TTS 選定方針確定**（Deep Research 結果） — 本命 Aivis Cloud API（プレミアム 1,980 円/月）、バックアップ ElevenLabs、LLM 統合検討用 OpenAI TTS。にじボイスは 2026-02-04 終了済みで採用不可。詳細 `.vibe/references/tts-research-2026-05-27.md`
-- 2026-05-27: **感情ラベルを 6 種に限定** — neutral / happy / teasing / surprised / embarrassed / sad-lite。angry は基本使わない（女子高生雑談での過剰演技回避）
-- 2026-05-27: **3 声の識別は声質だけでなく話速・語尾・口癖・字幕色で複合化** — 採用候補：A=明るく早口高め、B=落ち着き低め長間、C=ツッコミ中速語尾鋭い
+- 2026-05-27: **第三者レビュー実施** — プロダクト戦略・技術アーキ・DevOps の 3 視点で外部レビュー。指摘を踏まえて Phase 0 構造に再編
+- 2026-05-27: **pneuma-core 既存実装の遺跡（cross_chat 2 体ハードコード、RuntimeEngine 1 character 前提）は捨てる** — `pneuma_core/multi_agent/` を新規設計（PO 明確指示）
+- 2026-05-27: **戦略レビューの「人間が台本を書く」は撤回** — North Star（AI 自律会話）に反するため。代わりに Phase 0 C2 でテキスト試聴ゲートを設置（AI 走らせて結果を観る）
+- 2026-05-27: **TTS を ElevenLabs Multilingual/v3 に確定** — Aivis は 8 時間/日で月 19 万円、ElevenLabs Multilingual は月 2 万円。Phase 0 D の PoC で日本語キャラ性を最終確認
+- 2026-05-27: **ADR-0001 確定** — Firebase Hosting + Auth + Firestore + Storage + Cloud Run (Python) + ElevenLabs + Sonnet/Haiku 使い分け + prompt cache + Anthropic safety + 30 秒配信遅延
+- 2026-05-27: **Phase 0 構造（B-G の 6 タスク）を導入** — M1 直接 Issue 化を回避、検証ゲート C2 を経て M1 本体に進む
+- 2026-05-27: **ターゲット仮置き** — 「AI / プロダクト系で SNS 発信が活発な技術者・クリエイター層」を最初の 100 人に
+- 2026-05-27: **ライブ画面に内面の滲み出し演出を Phase 1 に含める** — ダッシュボード別タブだけだと差別化が伝わらないため（PAD ゲージオーバーレイ・関係性矢印・想起記憶フラッシュ）
+- 2026-05-27: **マネタイズ判断のチェックポイント** — M3 着手前に月固定費 5 万円超なら収益化議論必須
+- 2026-05-27: **M1 リリース判定基準** — Phase 0 C2 OK + PO 以外 3 人試聴で「観たい」場面 1 回以上 + デッドライン仮置き 2026-09-30
 
 ## Blockers
 
@@ -52,15 +59,17 @@
 
 ## Upcoming
 
-1. **M1 の Issue 分解** — `apps/aituber/` 配下の実装を 5〜10 個の Issue に分解。キャラ依存 / 非依存で分けて非依存（Web 配信基盤・TTS パイプライン・ダッシュボード骨格・セッション制御）から並列着手可能にする。構造化 spec の To-Be も各 Issue に紐付け（1 ドメイン 1 ファイル）
-2. **キャラ 3 人の設定** — PO が別セッションで作成、character.yaml + 立ち絵生成の前提
-3. **TTS 候補 3 声のライセンス確認** — PO 判断、確定後 PoC（同一台本横並び実測）へ
-4. **PoC 実施（Issue 化）** — Aivis / ElevenLabs / OpenAI を同一台本で比較し、本採用決定
+1. **構造化 spec スケルトン作成** — 7 Story + 2 Contract（Phase 0 で詳細化）
+2. **Phase 0 Issue 起票** — C / C2 / D / E / F / G を順次 `gh issue create`
+3. **キャラ 3 人の設計** — PO が別セッションで作成。Phase 0 C2 試聴ゲートの前提
+4. **Phase 0 C2 で MVP 検証ゲート** — テキスト試聴で「面白いか」判定 → OK なら D 以降、NG なら C に戻る
+5. **Phase 0 完了後** — M1 本体 Issue 群（5-10 個、改訂版）を起票
 
 ## Related Documents
 
 - `vision.md` — North Star、2 軸の差別化、3 層出力構造、ビジュアル進化
-- `plan.md` — M1〜M5 + Mx のマイルストーン
-- `.vibe/references/aituber-app-design.md` — AITuber アプリ設計メモ（VibeFlow v6 構造化 spec ではない、設計の全体像を 1 枚で俯瞰）
-- `.vibe/references/tts-research-2026-05-27.md` — TTS 選定 Deep Research の全文
-- 構造化 spec は Issue 分解時に `.vibe/spec/stories/aituber-*.yaml` として作成（1 ドメイン 1 ファイル）
+- `plan.md` — M1〜M5 + Mx のマイルストーン + Phase 0 構造
+- `.vibe/decisions/0001-architecture.md` — M1 アーキテクチャ ADR（Firebase + Cloud Run + ElevenLabs）
+- `.vibe/references/aituber-app-design.md` — AITuber アプリ設計メモ
+- `.vibe/references/tts-research-2026-05-27.md` — TTS 選定 Deep Research 全文
+- 構造化 spec は `.vibe/spec/stories/` 配下（Phase 0 でスケルトン作成、Issue ごとに To-Be 差分として詳細化）

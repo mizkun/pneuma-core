@@ -1,0 +1,31 @@
+id: aituber-moderation
+one_liner: |
+  AITuber 配信のコンテンツモデレーション層。3 体の AI が女子高生キャラとして自律
+  発言する設計上、CSAM 疑い・差別表現・実在人物中傷の生成リスクが高い。Anthropic
+  safety + 自前 NG ワードリスト + 配信遅延 30 秒バッファで多層防御する。
+  （Phase 0 G で `apps/aituber/backend/moderation/` および
+   `apps/aituber/scripts/kill-broadcast.sh` として実装される）
+invariants:
+  - id: llm-output-pre-filter
+    text: "LLM 出力は全て Anthropic safety + 自前 NG ワードリストで pre-filter される。NG 検出時はその発話を破棄し、フォールバック応答（沈黙）に切り替える。"
+  - id: broadcast-delay-buffer
+    text: "配信は 30 秒の遅延バッファを持つ。バッファ内で moderation NG が検出された場合、配信を切る or 該当発話部分をスキップする。"
+  - id: po-context-also-moderated
+    text: "PO のコンテクスト注入も軽い moderation を通る（PO 自身を守るため、過激な状況注入を防ぐ）。"
+  - id: kill-switch-required
+    text: "PO 以外の信頼できる人（1 名以上）が配信を即停止できる kill switch を提供する。実行手順は scripts/kill-broadcast.sh にドキュメント化する。"
+    rationale: |
+      Bus factor = 1 リスクの緩和。PO が連絡取れない時に
+      AI 3 体が炎上発言を 24/7 で垂れ流すシナリオを防ぐ。
+  - id: minor-character-blocklist
+    text: "未成年キャラに対する不適切トピック（性的表現・暴力的表現）はブロックリストに含まれる。"
+    rationale: |
+      YouTube 規約上、AI 生成であっても未成年外見キャラの不適切表現は
+      チャンネル即 BAN 案件。3 体女子高生設定の構造的リスクを軽減する。
+  - id: real-person-blocklist
+    text: "特定の実在声優・Vtuber・配信者の名前を含む発話はブロックリストに含まれる。声真似・キャラ模倣による炎上を防ぐ。"
+source_files:
+  - apps/aituber/
+depends_on:
+  - multi-agent
+  - aituber-broadcast

@@ -1,0 +1,24 @@
+id: aituber-scene
+one_liner: |
+  AITuber アプリの「場」を表現する概念。部室シーンの背景設定・参加キャラ・
+  セッション開始時のコンテクスト注入を扱う。PO が自由テキストで「今日は文化祭の
+  準備中」「雨が降っている」等を渡す唯一のインターフェース。
+  （Phase 1 で `apps/aituber/backend/scene/` として実装される。
+   source_ref は実装後に Issue ごとに埋める）
+invariants:
+  - id: scene-fixed-per-session
+    text: "1 セッションは 1 つの Scene（部室）に固定。途中で場所が変わることはない（移動・位置の概念を持たない）。"
+  - id: context-injected-at-session-start
+    text: "PO のコンテクスト注入はセッション開始時のみ。会話途中での動的注入は行わない（Phase 1）。"
+  - id: context-as-environmental-only
+    text: "コンテクスト注入は環境変化（雨・訪問者・状況設定）のみ。キャラ内面への直接干渉（天啓・命令）は禁止。"
+    rationale: |
+      Pneuma の世界観「上位存在は環境のみに介入、キャラの自律性を守る」を担保する。
+  - id: scene-context-in-system-prompt
+    text: "Scene のコンテクストは全キャラの system prompt に注入され、3 体が共通の状況認識を持つ。"
+  - id: po-only-context-injection
+    text: "コンテクスト注入できるのは PO（認証済み管理者）のみ。一般視聴者は介入できない。"
+source_files:
+  - apps/aituber/
+depends_on:
+  - multi-agent

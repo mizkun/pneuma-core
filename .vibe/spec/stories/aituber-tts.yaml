@@ -1,0 +1,31 @@
+id: aituber-tts
+one_liner: |
+  AITuber 配信の音声出力層。ElevenLabs Multilingual/v3 を採用、3 体それぞれに
+  異なる音声 ID を割り当てる。1〜2 文単位ストリーミング、低レイテンシ（first
+  audio byte 2 秒以内目標）、レート制限対応とコスト管理を行う。
+  （Phase 0 D で PoC、Phase 1 で `src/pneuma_core/voice/elevenlabs.py` および
+   `apps/aituber/backend/tts/` として実装される）
+invariants:
+  - id: tts-adapter-elevenlabs-primary
+    text: "Phase 1 の本採用 TTS は ElevenLabs Multilingual/v3。Aivis Cloud API は Phase 0 D の PoC で日本語キャラ性に大差がなければ不採用。"
+  - id: tts-streaming-per-utterance
+    text: "発話は 1〜2 文単位で TTS に送る。長文の 1 発投げは禁止（first audio byte 2 秒以内達成のため）。"
+  - id: tts-character-voice-id
+    text: "3 体それぞれに固有の voice_id が割り当てられ、character.yaml で参照される。識別性のため声質だけでなく話速・語尾・口癖も差別化する。"
+  - id: tts-emotion-label-mapped
+    text: "感情ラベルは neutral / happy / teasing / surprised / embarrassed / sad-lite の 6 種に限定。angry は基本使わない（過剰演技回避）。"
+  - id: tts-rate-limit-handling
+    text: "TTS API のレート制限ヒット時は exponential backoff + リトライキュー。3 体並行発話のピーク req/min を想定上限内に収める設計。"
+  - id: tts-license-confirmed
+    text: "採用する声は商用 YouTube Live / 収益化 / アーカイブ / 切り抜き / SNS 転載 / 将来 IP 展開のすべてで利用可能なライセンスであることを事前確認する。"
+    rationale: |
+      にじボイス終了 (2026-02-04) の教訓から、声のライセンスは
+      最初に潰すべきラスボスとして扱う。
+  - id: tts-ai-voice-disclosure
+    text: "OpenAI 系 TTS を採用した場合は AI 音声であることを番組概要・固定コメント・テロップで明示する。ElevenLabs/Aivis でも倫理的に同等の開示を行う。"
+source_files:
+  - src/pneuma_core/voice/
+  - apps/aituber/
+depends_on:
+  - voice
+  - multi-agent

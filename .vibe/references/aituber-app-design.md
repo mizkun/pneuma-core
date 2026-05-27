@@ -48,10 +48,18 @@ Pneuma 全体の North Star（`vision.md`）= 「AI キャラたちが暮らす�
 
 各キャラに異なる音声合成キャラを割り当てる。
 
-**サービス選定（2026-05-27 Deep Research 結果、詳細は `.vibe/references/tts-research-2026-05-27.md`）：**
-- **第一候補（本命）: Aivis Cloud API** — 日本語キャラ声向き、最短 0.3 秒再生開始、ストリーミング対応。Aivis プレミアム 1,980 円/月（10 req/min レート制限内で文字数無制限）。Phase 1 の予算で十分カバー可能
-- **第二候補（高品質バックアップ）: ElevenLabs** — Flash v2.5 で 75ms、Turbo 250〜300ms、巨大な声ライブラリ。Phase 1 は安いが 24/7 化で $648〜$1,296/月級
-- **第三候補（LLM 統合検討用）: OpenAI TTS / Realtime API** — LLM 統合で構成シンプル化可能、ただし標準声は英語寄り最適化
+**採用（2026-05-27 ADR-0001 で確定）: ElevenLabs Multilingual/v3**
+- 多言語対応・感情演技の幅・低レイテンシ（Flash 75ms / Turbo 250〜300ms）
+- 8 時間/日運用で月約 2 万円、Phase 1 (15 分/日) で月約 $13.50
+- ストリーミング対応、声ライブラリが豊富で 3 体識別性を作りやすい
+- Phase 0 D の PoC で Aivis と横並び実測。日本語キャラ性で大差なければ確定、極端に弱ければ Aivis に戻す
+
+**不採用: Aivis Cloud API**
+- 日本語キャラ声らしさは強いが、プレミアム 1,980 円/月は 10 req/min レート制限で 3 体ストリーミングに合わない
+- 従量プランは 8 時間/日で月 19 万円と高い
+- Phase 0 D の PoC で逆転があれば再採用検討
+
+詳細は `.vibe/references/tts-research-2026-05-27.md` と `.vibe/decisions/0001-architecture.md` 参照。
 
 **採用条件（全候補共通）：**
 - 使う 3 声のライセンスを商用 YouTube Live・収益化・アーカイブ・切り抜き・SNS 転載・将来の IP 展開まで含めて厳密に確認
@@ -188,23 +196,42 @@ Web サイト上で、誰でも見られる。
 
 ---
 
-## 8. リポジトリ構造
+## 8. リポジトリ構造 + 技術スタック
 
-モノレポ構成。
+モノレポ構成。技術スタックは `.vibe/decisions/0001-architecture.md` で確定。
 
 ```
-pneuma-core/                  # リポジトリルート
-├── src/pneuma_core/          # ライブラリ本体（OSS 公開対象、据え置き）
+pneuma-core/                       # リポジトリルート
+├── src/pneuma_core/               # ライブラリ本体（OSS 公開対象、Phase 0 で multi_agent / firestore backend を追加）
+│   ├── multi_agent/               # ★ 新規 — N 体会話制御、FloorController、MultiAgentSession
+│   ├── storage/firestore.py       # ★ 新規 — Firestore StorageBackend
+│   └── voice/elevenlabs.py        # ★ 新規 — ElevenLabs TTSAdapter
 ├── apps/
-│   └── aituber/              # 本アプリケーション（新設）
-│       ├── SPEC.md           # 本仕様書のコピー
-│       ├── ...               # 実装は Issue 分解時に決定
-├── .vibe/spec/               # 構造化 spec（共通）
-├── vision.md / plan.md       # プロジェクト全体ドキュメント
+│   └── aituber/                   # 本アプリケーション
+│       ├── SPEC.md                # 本仕様書のコピー
+│       ├── frontend/              # Next.js + Firebase SDK
+│       ├── backend/               # Python + FastAPI + Cloud Run
+│       ├── infra/                 # Firebase config / Cloud Run deploy / Secret 管理
+│       └── scripts/               # 運用スクリプト（kill switch / コスト監視）
+├── .vibe/spec/                    # 構造化 spec
+├── .vibe/decisions/               # ADR
+├── vision.md / plan.md            # プロジェクト全体ドキュメント
 └── ...
 ```
 
-`apps/aituber/` は pneuma-core を依存ライブラリとして使う。pyproject.toml の workspace 設定で開発時はモノレポ、公開時は `pneuma-core` パッケージだけ pip 配布可能にする。
+### 技術スタック（ADR-0001）
+
+| レイヤー | 採用 |
+|---|---|
+| Web ホスティング + 認証 + 永続化 + 画像 | **Firebase Hosting / Auth / Firestore / Storage** |
+| バックエンド（Python） | **Cloud Run + FastAPI** |
+| ダッシュボードのリアルタイム同期 | **Firestore `onSnapshot`**（自前 WebSocket 不要） |
+| LLM | **Anthropic Claude（Sonnet + Haiku 使い分け + prompt cache）** |
+| TTS | **ElevenLabs Multilingual/v3** |
+| Moderation | **Anthropic safety + 自前 NG ワード + 配信 30 秒遅延** |
+| Secret 管理 | **Google Secret Manager + dotenv（ローカル）+ gitleaks pre-commit** |
+| 監視 | **Cloud Logging + Sentry** |
+| 配信 | OBS で Web キャプチャ → YouTube Live（手動） |
 
 ---
 
@@ -233,10 +260,27 @@ pneuma-core/                  # リポジトリルート
 
 ## 10. ロードマップ（アプリ層）
 
-詳細は `plan.md` 参照。アプリ層の段階：
+詳細は `plan.md` 参照。
+
+### Phase 0（M1 着手前の前提固め、1-2 週間）
+
+第三者レビューを経て、M1 を Issue 化する前に技術的前提と検証ゲートを固める：
+
+| # | 内容 | 担当 |
+|---|---|---|
+| **B** | ADR-0001（本 ADR）を確定 | Iris ✅完了 |
+| **C** | `pneuma_core/multi_agent/` 新規設計（FloorController + N 体 SessionEndPipeline） | Coding Agent |
+| **C2** | **テキストモードで 3 体走らせて PO 試聴 → 面白さ判定**（UI / TTS / 立ち絵なし、ターミナル or 最小限 web ログのみ） | Coding Agent + PO |
+| **D** | TTS PoC（ElevenLabs 中心、Aivis 横並び実測） | Coding Agent + PO 試聴 |
+| **E** | `emotion_label` 単一定義 contract（PAD → label → TTS/立ち絵 を 1 経路に） | Iris |
+| **F** | コスト hard limit + Secret 管理方針 + gitleaks 導入 | PO + Coding Agent |
+| **G** | Moderation layer + kill switch + 通報窓口 + プライバシーポリシー雛形 | Iris + Coding Agent |
+
+**C2 が "面白さの検証ゲート"。** ここで「面白くない」判定なら、TTS や UI に進む前に C（multi-agent / FloorController）またはキャラ設計に戻る。コスト最小（API 料金のみ）で MVP 全体の成否を早期判定する。
 
 ### Phase 1（M1）
-- MVP 公開（Section 9 の必須要素）
+
+- MVP 公開（Section 9 の必須要素、Phase 0 完了後に Issue 群を起票）
 
 ### Phase 2（M2）
 - ダッシュボード過去履歴系の拡充
@@ -245,7 +289,7 @@ pneuma-core/                  # リポジトリルート
 - note 連載
 
 ### Phase 3（M3）
-- 真の 24/7 ライブ運用
+- 真の 24/7 ライブ運用（コスト最適化が前提条件）
 - 会社シーン（5〜10 体）への拡張
 
 ### Phase 4 以降（M4 / M5 / Mx）
@@ -254,12 +298,39 @@ pneuma-core/                  # リポジトリルート
 
 ---
 
-## 11. Iris への引き継ぎ要約
+## 11. 視聴者・差別化に関する設計指針（戦略レビュー指摘の吸収）
+
+### 11.1 最初の 100 人のターゲット仮置き
+
+「AI / プロダクト系で SNS 発信が活発な技術者・クリエイター層」を最初の 100 人として仮置きする。
+- Vtuber ファン / きらら系ファンは "後から取りに行く" 扱い
+- ターゲット 1 つに絞ることで note 解説記事・配信トーン・キャラ設定の方向性が一貫する
+
+### 11.2 ライブ画面に「内面の滲み出し」演出
+
+ダッシュボードを別タブに置くだけだと、視聴者は開かないし差別化が伝わらない。**Web フロントのライブ画面そのものに以下を組み込む：**
+- PAD ゲージのオーバーレイ（キャラの近くに小さく表示）
+- 関係性スコアの変化を矢印アニメで一瞬表示
+- 想起記憶のフラッシュテロップ（「いま思い出してる：◯◯」）
+
+これがあって初めて、ライブ視聴者にもパーソナリティ心理学アルゴリズムが体感として届く。
+
+### 11.3 MVP 検証ゲート（Phase 0 C2）
+
+人間が台本を書くのは Pneuma の North Star（AI 自律会話）に反する。代わりに **AI を実際に走らせてテキスト出力を観る** ことで「観たいか」を検証する：
+- C で multi-agent + キャラ 3 人設定を実装
+- C2 でテキストのみで 3 体を走らせ、PO が観て「面白い／面白くない」を判定
+- 「面白くない」なら C に戻る（プロンプト・キャラ・FloorController を調整）
+- 「面白い」なら D 以降（TTS / UI / 立ち絵 / 配信）に進む
+
+---
+
+## 12. Iris への引き継ぎ要約
 
 - 本アプリケーションは pneuma-core を **AITuber 配信プラットフォーム**として活用する
 - 3 キャラ女子高生・放送部・定点カメラの覗き見スタイル
 - 出力は **ライブ + 観察ダッシュボード + note 記事** の 3 層
-- Phase 1 = 15 分セッション + ダッシュボード MVP + note 1 本
-- Phase 2 で SNS 連携・切り抜き自動化、Phase 3 で 24/7 化と会社シーン
-- 詳細は本ドキュメントの各セクション参照
-- 次のアクション：(1) TTS 選定 Deep Research、(2) キャラ 3 人設計（PO）、(3) Issue 分解
+- 技術スタックは Firebase + Cloud Run + ElevenLabs（ADR-0001 で確定）
+- **Phase 0 = 着手前の前提固め（multi_agent 新規設計、テキスト試聴ゲート、TTS PoC、emotion_label 単一化、コスト hard limit、Moderation）**
+- **Phase 1 = MVP 公開**（Phase 0 完了後に Issue 群起票）
+- 次のアクション：(1) Phase 0 Issue を起票（C / C2 / D / E / F / G）、(2) PO 並列タスクでキャラ 3 人設計

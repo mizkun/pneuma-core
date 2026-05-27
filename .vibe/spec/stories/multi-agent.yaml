@@ -1,0 +1,34 @@
+id: multi-agent
+one_liner: |
+  N 体のキャラクターが同じセッションに参加し、発話権を制御しながら自律会話する
+  マルチエージェント基盤。pneuma-core 既存の 1 character ↔ 1 engine 前提を超えて、
+  3 体以上の AI が共存する世界を扱う。AITuber 配信のコア基盤。
+  （Phase 0 C で `src/pneuma_core/multi_agent/` として新規実装される。
+   source_ref は実装後に Issue ごとに埋める）
+invariants:
+  - id: turn-rotation-base
+    text: "発話権は順次キャラクターを巡る（A→B→C→A→...）ベース。具体的な決定アルゴリズムは FloorController が拡張する。"
+  - id: thinking-on-every-turn
+    text: "各ターンで全キャラクターの thinking は走り、内部状態（PAD・想起記憶）が更新される。発話するかは別判定。"
+  - id: observation-turn-state-update
+    text: "自分のターンでなくても、他キャラの発話・行動は自分の history に積まれ、PAD 評価対象になる（聞いているキャラの内面も動く）。"
+  - id: utterance-action-pair
+    text: "1 ターンの出力は (speech, action) のペア。speech 空 = 沈黙、action 空 = 動かない。両方空も許容（完全沈黙ターン）。"
+  - id: floor-controller-decision
+    text: "FloorController は性格（外向性）・直前発話への関連度・直近の発話頻度（喋りすぎ抑制）をスコアリングして次ターンの発話者を決める。"
+  - id: multi-agent-session-end
+    text: "MultiAgentSession 終了時、N 体ぶんの episodic/semantic/relation を一括統合更新する（既存 SessionEndPipeline の N 体対応）。"
+  - id: turn-rate-limit
+    text: "1 セッション当たりの LLM 呼び出し回数・TTS リクエスト数に上限がある（コスト暴走防止のサーキットブレーカー）。"
+    rationale: |
+      ターン頻度暴走（無限ループ・リトライ嵐）で API 課金が想定外に膨らむのを防ぐ。
+      上限は ADR-0001 のコスト hard limit と整合させる。
+source_files:
+  - src/pneuma_core/
+depends_on:
+  - models
+  - protocols
+  - emotion
+  - llm
+  - memory
+  - runtime

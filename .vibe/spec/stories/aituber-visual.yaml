@@ -1,0 +1,21 @@
+id: aituber-visual
+one_liner: |
+  AITuber 配信のビジュアル層。静的立ち絵 × 感情パターン差し替え × 定点カメラの
+  紙芝居方式。Live2D・3D・移動の概念は持たない。emotion_label の変化に応じて
+  事前用意した立ち絵に切り替えるだけのシンプル設計。
+  （Phase 1 で `apps/aituber/frontend/livestream/` として実装される）
+invariants:
+  - id: still-image-only
+    text: "立ち絵は静的画像のみ。Live2D・3D・アニメーションは使わない（Phase 1）。"
+  - id: emotion-to-image-mapping
+    text: "立ち絵の切り替えは emotion_label（aituber-emotion-label contract）に直接マッピングされる。中間ロジックは持たない。"
+  - id: speaker-marker-required
+    text: "発話中のキャラには発話者マーカー（吹き出しアイコン等）が表示される。リップシンクは不要。"
+  - id: fixed-camera-no-movement
+    text: "カメラは定点固定。キャラの位置移動・カメラパン・ズームは行わない。"
+  - id: assets-from-po
+    text: "立ち絵 18〜24 パターン + 背景画像 1 枚は PO が事前用意する（AI 主導の開発スコープ外）。"
+source_files:
+  - apps/aituber/
+depends_on:
+  - aituber-scene

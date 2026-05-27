@@ -1,0 +1,7 @@
+id: aituber-emotion-label
+schema_ref: pneuma_core.models.emotion.EmotionLabel
+producers:
+  - src/pneuma_core/runtime/emotion_engine.py
+consumers:
+  - apps/aituber/
+story: emotion
