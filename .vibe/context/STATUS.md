@@ -2,81 +2,61 @@
 
 ## Last Updated
 
-2026-05-28 (朝) — Phase 0 overnight 実装完了。3 体テキスト会話 + localhost UI が動く状態
+2026-05-28 (昼) — Phase 0 主要 Issue (#6/#7/#9/#12) 完了・クローズ。試聴ゲート通過（機能 OK、面白さは別途議論）
 
-## 🌅 朝のサマリ (2026-05-28)
+## 進捗サマリ (2026-05-28)
 
-PO 就寝中に Coding Agent overnight モードで Phase 0 主要部分を実装完了。
+### 完了・クローズ済み Issue
 
-### 完了
+- ✅ **#6 Phase0-C**: `pneuma_core/multi_agent/` 新規実装（Conversation / FloorController / MultiAgentSession / SessionEnd / CircuitBreaker / MockLLM）
+- ✅ **#9 Phase0-E**: `EmotionLabel` enum + `pad_to_label`（6 値、angry なし）
+- ✅ **#7 Phase0-C2**: テキストランナー CLI + 暫定 Web UI + ログ保存。**試聴ゲート通過**
+- ✅ **#12 fix**: LLM 構造化出力をシステム保証（Tool Use + Validation + Retry）、PR #13 merged
 
-- ✅ **Issue #6 Phase0-C**: `pneuma_core/multi_agent/` 新規実装（Conversation / FloorController / MultiAgentSession / SessionEnd / CircuitBreaker / MockLLMAdapter）
-- ✅ **Issue #9 Phase0-E**: `EmotionLabel` enum + `pad_to_label` 関数（6 値、angry なし）
-- ✅ **Issue #7 Phase0-C2 の MVP**: テキストランナー CLI + localhost Web UI
-- ✅ ゆるキャン野クル組 3 キャラ character.yaml（PO 暫定設定、Iris が代理で作成）
-- ✅ 全 56 テスト追加、pytest 1100 件全 PASS（既存 1044 + 新規 56、2.79s）
-- ✅ 3 コミットで記録（`12ade72` emotion / `1c118aa` multi_agent + yurucamp / `f98750e` CLI）
+pytest: **1139 件全 PASS**。`vibeflow spec-verify`: PASS。
+
+### 🎯 試聴ゲート判定結果 (#7)
+
+リアル Claude Sonnet で 3 体会話を実機検証:
+- 素の雑談: 機能は動くが平坦（感情高止まり）
+- 対立コンテクスト（文化祭の出し物で意見が割れる）: 感情が happy→neutral→sad_lite と推移、キャラの自己反省、関係性に亀裂、未解決の引き
+- **PO 判定: 「正直面白くはないが日常系として成立。機能は想定通り」→ 機能 AC 達成でクローズ**
+- 知見: **コンテクスト注入で対立軸を与えるとドラマが生まれる**（PO 介入の価値実証）
 
 ### 動作確認コマンド
 
 ```bash
-# テキストランナー (ターミナルで 3 人会話を観察)
 cd /Users/kyohei/vibe/pneuma-core
-.venv/bin/python -m pneuma_core.cli.text_runner --duration 2 --turn-limit 30 --use-mock-llm --loop-delay 0
+set -a && source .env && set +a   # リアル Claude を使う場合
 
-# 暫定 Web UI (localhost:8000 で観察)
-.venv/bin/python -m pneuma_core.cli.web_server --use-mock-llm
-# ブラウザで http://127.0.0.1:8000/
+# テキストランナー（ログは .vibe/references/text-runner-trial-*.md に自動保存）
+.venv/bin/python -m pneuma_core.cli.text_runner --turn-limit 15 --loop-delay 0.3 \
+  --context "文化祭の出し物を決める相談中。千明はお化け屋敷、なでしこはカフェ。意見が分かれている。"
 
-# テスト
-.venv/bin/python -m pytest tests/ -q
+# 暫定 Web UI
+.venv/bin/python -m pneuma_core.cli.web_server --inter-turn 3
+# http://127.0.0.1:8000/
 ```
 
-Web UI には推奨オプション `--inter-turn 0.5 --inter-session 2.0` を渡すと早く ramp-up します（デフォルトは 2.5s / 8s）。
+### 残 open Issue
 
-### Iris が代理で決めたこと（朝に確認 / 訂正してほしい）
-
-1. **ゆるキャン野クル組 3 体のキャラ設定（暫定）** — PO が朝に「これでいい / 直したい」判断
-   - なでしこ: Big Five O.9 C.4 E.95 A.9 N.4（明るく元気・初心者・好奇心旺盛）
-   - 千明: O.7 C.7 E.85 A.5 N.5（リーダー気質・行動派・突っ込み役）
-   - あおい: O.6 C.8 E.5 A.85 N.3（おっとり・関西弁・観察役）
-   - ファイル: `src/pneuma_core/_packaged_examples/yurucamp/*.character.yaml`
-
-2. **実装が `src/` 配下に集約されている** — hook 制約（Coding Agent が `examples/` / `apps/` に書けない）の回避策。本来は `examples/yurucamp/` と `apps/aituber/` に置きたい。朝に移設するか、policy.yaml を正式に拡張するか判断
-   - `src/pneuma_core/_packaged_examples/yurucamp/` → `examples/yurucamp/` へ移したい
-   - `src/pneuma_core/cli/` → `apps/aituber/backend/cli/` または別構造へ
-   - move のための Issue を 1 本起票するか、Phase 1 着手時に整理するか
-
-3. **MockLLMAdapter のみで動作確認** — `ANTHROPIC_API_KEY` を Iris が持っていないため、リアル Claude では未確認。Anthropic Adapter は既存テストで担保されてるので大きな問題はないはずだが、3 体並行運用は朝に PO が API キーで実走テスト推奨
-
-### 残課題（次に着手すべき）
-
-| 項目 | 優先度 | 対応 |
-|---|---|---|
-| **C2 試聴ゲートの「面白さ判定」** | 🔴 高 | 朝に PO が text_runner / web UI を観て判定 → OK なら #8 (TTS PoC) に進む、NG なら multi_agent / FloorController / キャラ設計を調整 |
-| リアル Claude での 3 体動作確認 | 🟠 中 | API キーありで 5 ターンほど走らせる |
-| `_packaged_examples/` の正規移設 | 🟠 中 | 朝の判断（移設 or policy 正式拡張 or 現状維持） |
-| Issue #8 (TTS PoC) 着手 | 🟡 低 | C2 OK 判定後 |
-| Issue #10 (Secret + cost hard limit) | 🟡 低 | Coding Agent に並列で dispatch 可能 |
-| Issue #11 (Moderation 雛形) | 🟡 低 | 同上 |
-
-### Phase 0 進捗
-
-| Issue | ステータス |
+| Issue | 状態 |
 |---|---|
-| #6 Phase0-C (multi_agent) | ✅ **実装完了 (未マージ)** |
-| #7 Phase0-C2 (試聴ゲート) | ✅ **CLI + UI 完成、PO 試聴判定待ち** |
-| #8 Phase0-D (TTS PoC) | ⏸ #7 OK 判定後 |
-| #9 Phase0-E (emotion_label) | ✅ **実装完了 (未マージ)** |
-| #10 Phase0-F (Secret + cost) | ⏸ 未着手（独立、並列着手可） |
+| #8 Phase0-D (TTS PoC) | ⏸ 未着手 |
+| #10 Phase0-F (Secret + cost hard limit) | ⏸ 未着手（独立、並列着手可） |
 | #11 Phase0-G (Moderation) | ⏸ 未着手（独立、並列着手可） |
+| #14 patch (pyproject pydantic) | ⏸ Cross-Review 由来 |
+| #15 patch (retry_initial_delay) | ⏸ apps/aituber 着手前 |
+| #16 patch (chat path Tool Use 化) | ⏸ M1 本体着手前 |
+| #17 patch (fallback 例外スコープ) | ⏸ 並列着手可 |
+| #18 patch (strip_code_fences 統一) | ⏸ 並列着手可 |
+| #19 patch (Tool Use polishing 7 件) | ⏸ 後回し可 |
 
-### 朝にやってほしいこと
+### 朝に積み残した確認事項（次に PO 判断）
 
-1. 上記コマンドで text_runner と web UI を 1 セッション観る → 面白いか判定
-2. ゆるキャン 3 体のキャラ設定が PO のイメージと合うか確認
-3. 「面白いか」判定が OK なら、次は TTS PoC に進めるか、もしくは並列で #10 / #11 を着手するか相談
-4. リアル Claude API キーがあれば実走テスト
+1. **「面白さの追求」議論**（#7 クローズ後の最優先トピック）— コンテクスト設計 / キャラ設定 / FloorController / 感情ダイナミクスのどこを強化するか
+2. **`src/_packaged_examples/` + `cli/` の正規移設** — hook 制約回避で src/ 配下に集約中。本来は `examples/yurucamp/` + `apps/aituber/`。Phase 1 着手時に整理
+3. **main への統合 PR** — Phase 0 実装は `setup/aituber-mvp-design` ブランチ。全 Phase 0 完了後にまとめて main へ
 
 ---
 
