@@ -10,6 +10,7 @@ invariants:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -181,15 +182,13 @@ def _content_tokens(text: str) -> list[str]:
 
     日本語は分かち書きしないので、形態素解析を使わずに「ひらがな（≒助詞・
     活用語尾）で区切る」近似でノイズを落とす。たとえば「お化け屋敷をやりたい」
-    は ['お化け屋敷'] に、「カフェで料理を褒められたい」は ['カフェ', '料理']
+    は ['化け屋敷'] に、「カフェで料理を褒められたい」は ['カフェ', '料理']
     になる。語の重なり検出（substring 一致）に十分な粒度を狙う。
     """
-    import re
-
     # ひらがな以外（漢字・カタカナ・英数字）の連続塊を「内容語の核」として拾う。
     # 先頭に付くことのある「お」「ご」等の接頭ひらがなは塊に含めないが、
     # 内部の漢字塊が拾えれば一致するので問題ない。
-    raw = re.findall(r"[一-鿿々〆ヵヶ々ァ-ヴーA-Za-z0-9]+", text)
+    raw = re.findall(r"[一-鿿々〆ヵヶァ-ヴーA-Za-z0-9]+", text)
     out: list[str] = []
     for tok in raw:
         if len(tok) < _MIN_TOKEN_LEN:

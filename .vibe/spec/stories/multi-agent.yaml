@@ -23,6 +23,31 @@ invariants:
     rationale: |
       ターン頻度暴走（無限ループ・リトライ嵐）で API 課金が想定外に膨らむのを防ぐ。
       上限は ADR-0001 のコスト hard limit と整合させる。
+  - id: intent-driven-utterance
+    text: |
+      各キャラは長期欲求（values/goals/desires）と状況（shared_context）から短期
+      ゴール（思惑 = Intent: surface_goal/hidden_goal/intensity）を持ち、発話は
+      その思惑に駆動される。思惑は発話プロンプトに注入され、FloorController も
+      intent_relevance（直前発話が自分の思惑に絡むか）を intensity でスケールして
+      スコアに加味する。
+    source_ref: src/pneuma_core/multi_agent/intent.py:IntentGenerator
+    test: tests/multi_agent/test_intent.py
+  - id: intent-emergent-not-scripted
+    text: |
+      短期ゴール（思惑）は長期欲求 + 状況から創発的に生成され、展開（いつ何が
+      起きるか）は台本化しない。Intent 生成は Tool Use 強制の structured_completion
+      で行い、温度を高めにして決定論的にならないようにする（同じキャラ・同じ状況
+      でも思惑の表出が毎回同じにはならない）。
+    source_ref: src/pneuma_core/multi_agent/intent.py:Intent
+    test: tests/multi_agent/test_intent.py
+  - id: speech-thought-separation
+    text: |
+      各ターンは表の発言（speech）と裏の本音（thought）を分離生成・分離記録し、
+      両者にギャップがありうる（例: 表では強気だが内心は引けないだけ）。thought は
+      Utterance.thought / CharacterRuntimeState.last_thought / snapshot に保持され、
+      視聴者は thought を観測できる（会話相手には見えない）。
+    source_ref: src/pneuma_core/multi_agent/session.py:MultiAgentSession
+    test: tests/multi_agent/test_intent.py
 source_files:
   - src/pneuma_core/
 depends_on:
