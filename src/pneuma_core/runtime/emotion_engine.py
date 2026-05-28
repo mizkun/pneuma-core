@@ -6,7 +6,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from pneuma_core.emotion.baseline import personality_to_pad_baseline
 from pneuma_core.emotion.decay import exponential_decay
@@ -281,46 +281,68 @@ class EmotionEngine:
         )
 
         if self._supports_tool_use():
-            async def call_tool_use() -> EmotionEvaluation:
-                payload = await self._llm.structured_completion(  # type: ignore[attr-defined]
-                    system_prompt=system_prompt,
-                    messages=truncated,
-                    tool_name="report_emotion",
-                    tool_description=(
-                        "Report the character's current PAD emotional state "
-                        "based on the conversation."
-                    ),
-                    schema=_EMOTION_SCHEMA,
-                    model=self._model,
-                )
-                return validator.validate(payload)
+            call = self._make_tool_use_call(
+                system_prompt, truncated, validator
+            )
+        else:
+            call = self._make_generate_call(
+                system_prompt, truncated, validator
+            )
 
-            try:
-                evaluation = await retry.run(call_tool_use)
-            except StructuredResponseError as e:
-                logger.warning(
-                    "structured_completion exhausted retries: %s, "
-                    "returning neutral state",
-                    e,
-                )
-                return NEUTRAL_EMOTION
-            except Exception as e:
-                logger.warning(
-                    "LLM structured call failed: %s: %s, returning neutral state",
-                    type(e).__name__,
-                    e,
-                )
-                return NEUTRAL_EMOTION
-            return _evaluation_to_state(evaluation)
+        try:
+            evaluation = await retry.run(call)
+        except StructuredResponseError as e:
+            logger.warning(
+                "Emotion estimate failed after retries (%s), returning neutral",
+                e,
+            )
+            return NEUTRAL_EMOTION
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "Emotion LLM call failed: %s: %s, returning neutral state",
+                type(e).__name__,
+                e,
+            )
+            return NEUTRAL_EMOTION
 
-        # Fallback path — generate() + pre-strip + strict validate + retry.
+        return _evaluation_to_state(evaluation)
+
+    def _make_tool_use_call(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        validator: ResponseValidator[EmotionEvaluation],
+    ):
+        """Build async callable for Tool Use path."""
+        async def call() -> EmotionEvaluation:
+            payload = await self._llm.structured_completion(  # type: ignore[attr-defined]
+                system_prompt=system_prompt,
+                messages=messages,
+                tool_name="report_emotion",
+                tool_description=(
+                    "Report the character's current PAD emotional state "
+                    "based on the conversation."
+                ),
+                schema=_EMOTION_SCHEMA,
+                model=self._model,
+            )
+            return validator.validate(payload)
+        return call
+
+    def _make_generate_call(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        validator: ResponseValidator[EmotionEvaluation],
+    ):
+        """Build async callable for generate() fallback path."""
         request = LLMRequest(
             system_prompt=system_prompt,
-            messages=truncated,
+            messages=messages,
             model=self._model,
         )
 
-        async def call_generate() -> EmotionEvaluation:
+        async def call() -> EmotionEvaluation:
             response = await self._llm.generate(request)
             raw = response.content or ""
             stripped = strip_code_fences(raw)
@@ -331,24 +353,7 @@ class EmotionEngine:
                     f"failed to JSON-parse LLM response: {e}; raw={raw[:200]!r}"
                 ) from e
             return validator.validate(data)
-
-        try:
-            evaluation = await retry.run(call_generate)
-        except StructuredResponseError as e:
-            logger.warning(
-                "Malformed LLM response after retries: %s, returning neutral state",
-                e,
-            )
-            return NEUTRAL_EMOTION
-        except Exception as e:
-            logger.warning(
-                "LLM generate failed: %s: %s, returning neutral state",
-                type(e).__name__,
-                e,
-            )
-            return NEUTRAL_EMOTION
-
-        return _evaluation_to_state(evaluation)
+        return call
 
     def _supports_tool_use(self) -> bool:
         """Adapter が structured_completion を正式実装しているか判定する.
