@@ -53,12 +53,32 @@ invariants:
   - id: session-end-integrated-analysis
     text: "SessionEndPipeline はセッション終了時に LLM 一回で episodic/semantic/relationship を統合更新する。"
     source_ref: src/pneuma_core/runtime/session_end_pipeline.py:SessionEndPipeline
+  - id: structured-output-via-tool-use
+    text: "内部状態評価（emotion / session_end / 構造化応答）の LLM コールは Anthropic Tool Use API で JSON Schema を強制する。生テキストプロンプトでの JSON 指示は不可。"
+    test: tests/llm/test_structured_completion.py
+    source_ref: src/pneuma_core/llm/claude.py:ClaudeAdapter
+    rationale: |
+      LLM はプロンプトの「JSON で返せ」指示を確率的にしか守らない。
+      Tool Use を使うとスキーマ違反のレスポンス自体が API レベルで起きなくなる。
+  - id: llm-response-validated-strict
+    text: "全構造化 LLM レスポンスは Pydantic モデルで strict parse される。失敗時は N 回まで自動再試行し、それでも失敗ならログ + 明示的フォールバック値（neutral 等）を返す。"
+    test: tests/llm/test_validation.py
+    source_ref: src/pneuma_core/llm/validation.py:ResponseValidator
+  - id: llm-response-pre-strip
+    text: "Tool Use を使えないレガシーパス（テスト・モック・後方互換）でも、マークダウンコードブロック (```json ... ```) や前後の説明文は前処理で除去してから JSON parse する。"
+    test: tests/runtime/test_response_parser_codeblock.py
+    source_ref: src/pneuma_core/runtime/response_parser.py:strip_code_fences
+    rationale: |
+      深層防御。Tool Use が効いていない箇所でもパースが破綻しない。
 source_files:
   - src/pneuma_core/runtime/
   - src/pneuma_core/character_sheet.py
   - src/pneuma_core/vault.py
   - src/pneuma_core/exceptions.py
   - src/pneuma_core/__init__.py
+  - src/pneuma_core/llm/claude.py
+  - src/pneuma_core/llm/validation.py
+  - src/pneuma_core/llm/retry.py
 depends_on:
   - models
   - protocols

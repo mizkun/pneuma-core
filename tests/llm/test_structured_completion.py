@@ -146,7 +146,7 @@ class TestStructuredCompletion:
             await adapter.structured_completion(
                 system_prompt="sys",
                 messages=[{"role": "user", "content": "hi"}],
-                tool_name="t",
+                tool_name="report_emotion",
                 tool_description="d",
                 schema=_SCHEMA,
                 model="claude-haiku-4-20250514",
