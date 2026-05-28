@@ -84,6 +84,31 @@ _RESPONSE_POOL: dict[str, list[tuple[str, str]]] = {
 }
 
 
+def _default_payload_for_schema(schema: dict) -> dict:
+    """Build a minimal dict satisfying the JSON Schema's required fields (Issue #12)."""
+    if not isinstance(schema, dict):
+        return {}
+    props = schema.get("properties", {}) or {}
+    required = schema.get("required", []) or []
+    out: dict = {}
+    for field_name in required:
+        spec = props.get(field_name, {}) or {}
+        ftype = spec.get("type")
+        if ftype == "number" or ftype == "integer":
+            out[field_name] = 0.0 if ftype == "number" else 0
+        elif ftype == "string":
+            out[field_name] = ""
+        elif ftype == "array":
+            out[field_name] = []
+        elif ftype == "object":
+            out[field_name] = {}
+        elif ftype == "boolean":
+            out[field_name] = False
+        else:
+            out[field_name] = None
+    return out
+
+
 def _detect_character_name(system_prompt: str) -> str:
     """system_prompt からキャラ名を抽出（プールを引くキー）.
 
@@ -130,6 +155,10 @@ def _detect_request_kind(system_prompt: str) -> str:
 class MockLLMAdapter:
     """API キーなしで動かすための疑似 LLM."""
 
+    # Issue #12: structured_completion path is supported by mock, so emotion_engine
+    # and session_end pipelines exercise the same code branch as real Claude.
+    supports_structured_completion: bool = True
+
     def __init__(self, seed: int | None = None, latency_seconds: float = 0.0) -> None:
         self._rng = random.Random(seed)
         self._latency = latency_seconds
@@ -162,6 +191,39 @@ class MockLLMAdapter:
             model="mock-llm",
             usage=usage,
         )
+
+    async def structured_completion(
+        self,
+        *,
+        system_prompt: str,
+        messages: list[dict],
+        tool_name: str,
+        tool_description: str,
+        schema: dict,
+        model: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 1024,
+    ) -> dict:
+        """Tool-Use 模倣: schema に対応した dict を返す (Issue #12).
+
+        tool_name が `report_emotion` なら emotion 用 dict、
+        `record_session_memories` なら session_end 用 dict、
+        それ以外は schema の required を埋めた最小の dict を返す.
+
+        invariant: structured-output-via-tool-use
+        """
+        self._call_count += 1
+        if self._latency > 0:
+            await asyncio.sleep(self._latency)
+
+        if tool_name == "report_emotion":
+            request = LLMRequest(system_prompt=system_prompt, messages=messages)
+            return json.loads(self._gen_emotion(request))
+        if tool_name == "record_session_memories":
+            return json.loads(self._gen_session_end())
+
+        # Generic fallback: 各 required を最小値で埋める
+        return _default_payload_for_schema(schema)
 
     def _gen_chat(self, request: LLMRequest) -> str:
         name = _detect_character_name(request.system_prompt)

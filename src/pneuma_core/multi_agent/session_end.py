@@ -8,21 +8,71 @@ Phase 0 C の最小実装:
 - 関係性は MultiAgentSession 内ですでに微増更新されているので、ここでは
   「session 全体での delta」として PAD 履歴の平均から再評価
 - storage 永続化はオプショナル（テキストランナーは in-memory）
+
+Issue #12: 構造化レスポンスは Tool Use 経由で取得（real Claude）。
+モック / fallback 経路では strip_code_fences → json.loads.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 
 from pneuma_core.llm.adapter import LLMAdapter, LLMRequest
 from pneuma_core.multi_agent.session import MultiAgentSession
+from pneuma_core.runtime.response_parser import strip_code_fences
 
 logger = logging.getLogger(__name__)
 
-_MD_CODE_BLOCK_RE = re.compile(r"^```(?:json)?\s*\n?(.*?)\n?\s*```$", re.DOTALL)
+
+# JSON Schema for Tool Use (Anthropic API). Issue #12 invariant.
+_SESSION_END_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "episodic_memories": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string"},
+                    "emotional_valence": {
+                        "type": "number",
+                        "minimum": -1.0,
+                        "maximum": 1.0,
+                    },
+                    "importance": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                    },
+                },
+                "required": ["content", "emotional_valence", "importance"],
+            },
+        },
+        "semantic_updates": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string"},
+                    "content": {"type": "string"},
+                    "confidence": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                    },
+                },
+                "required": ["action", "content", "confidence"],
+            },
+        },
+        "relationship_changes": {
+            "type": "array",
+            "items": {"type": "object"},
+        },
+    },
+    "required": ["episodic_memories", "semantic_updates", "relationship_changes"],
+}
 
 _SYSTEM_PROMPT = """\
 あなたはAIキャラクターの記憶管理アシスタントです。
@@ -143,6 +193,31 @@ class MultiAgentSessionEndPipeline:
 
     async def _analyze(self, name: str, view: list[dict]) -> dict:
         prompt = _SYSTEM_PROMPT.format(name=name)
+
+        # Issue #12: real Claude → Tool Use（schema 強制）; mock / fallback → generate().
+        if self._supports_tool_use():
+            try:
+                return await self._llm.structured_completion(  # type: ignore[attr-defined]
+                    system_prompt=prompt,
+                    messages=view[-30:],
+                    tool_name="record_session_memories",
+                    tool_description=(
+                        "Record episodic memories, semantic updates, and "
+                        "relationship changes from the session."
+                    ),
+                    schema=_SESSION_END_SCHEMA,
+                    model=self._model,
+                    temperature=0.3,
+                    max_tokens=1024,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "session-end structured_completion failed: %s, "
+                    "falling back to text response",
+                    e,
+                )
+                # Fall through to generate() path
+
         response = await self._llm.generate(
             LLMRequest(
                 system_prompt=prompt,
@@ -154,13 +229,16 @@ class MultiAgentSessionEndPipeline:
         )
         return self._parse_json(response.content)
 
+    def _supports_tool_use(self) -> bool:
+        """Adapter が structured_completion を正式実装しているか判定."""
+        marker = getattr(type(self._llm), "supports_structured_completion", None)
+        return bool(marker)
+
     @staticmethod
     def _parse_json(content: str) -> dict:
-        text = content.strip()
-        m = _MD_CODE_BLOCK_RE.match(text)
-        if m:
-            text = m.group(1).strip()
+        """Pre-strip code fences then json.loads (invariant: llm-response-pre-strip)."""
+        stripped = strip_code_fences(content or "")
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
+            return json.loads(stripped)
+        except (json.JSONDecodeError, TypeError):
             return {}

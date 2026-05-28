@@ -12,6 +12,7 @@ from anthropic.types import TextBlock
 
 from pneuma_core.exceptions import LLMTimeoutError
 from pneuma_core.llm.adapter import LLMRequest, LLMResponse
+from pneuma_core.llm.validation import StructuredResponseError
 
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
 MAX_RETRIES = 3
@@ -119,6 +120,83 @@ class ClaudeAdapter:
 
         # Should not reach here, but raise last error for safety
         raise last_error  # type: ignore[misc]
+
+    # Marker attribute consumed by emotion_engine / session_end to decide
+    # whether to take the Tool Use path. AsyncMock auto-attributes do not have
+    # this set as a real bool, so it is a safe runtime guard.
+    supports_structured_completion: bool = True
+
+    async def structured_completion(
+        self,
+        *,
+        system_prompt: str,
+        messages: list[dict],
+        tool_name: str,
+        tool_description: str,
+        schema: dict,
+        model: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 1024,
+    ) -> dict:
+        """Anthropic Tool Use API で JSON Schema 準拠の dict を強制取得する.
+
+        invariant: structured-output-via-tool-use — 内部状態評価系の LLM コール
+        は Tool Use API で schema を強制する。生テキストプロンプトでの JSON
+        指示は不可。
+
+        Args:
+            system_prompt: System プロンプト.
+            messages: 会話履歴.
+            tool_name: 強制する tool 名（response.content の ToolUseBlock.name と一致）.
+            tool_description: tool の説明（LLM 側の判断材料）.
+            schema: JSON Schema (object 型). properties / required を含むこと.
+            model: モデル名（None なら default_model）.
+            temperature: 0.0〜2.0.
+            max_tokens: 上限トークン.
+
+        Returns:
+            ToolUseBlock.input の dict（schema 準拠が API レベルで保証される）.
+
+        Raises:
+            StructuredResponseError: tool_use ブロックが取れなかった場合.
+            APITimeoutError / APIStatusError: 通常の SDK 例外.
+        """
+        tools = [
+            {
+                "name": tool_name,
+                "description": tool_description,
+                "input_schema": schema,
+            }
+        ]
+        tool_choice = {"type": "tool", "name": tool_name}
+
+        response = await self._client.messages.create(
+            model=model or self.default_model,
+            system=system_prompt,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
+
+        for block in response.content:
+            if getattr(block, "type", None) == "tool_use" and getattr(
+                block, "name", None
+            ) == tool_name:
+                payload = getattr(block, "input", None)
+                if not isinstance(payload, dict):
+                    raise StructuredResponseError(
+                        f"tool_use block '{tool_name}' returned non-dict input: "
+                        f"{type(payload).__name__}"
+                    )
+                return payload
+
+        stop_reason = getattr(response, "stop_reason", "unknown")
+        raise StructuredResponseError(
+            f"no tool_use block named '{tool_name}' in response "
+            f"(stop_reason={stop_reason})"
+        )
 
     @staticmethod
     def _build_system_param(request: LLMRequest) -> str | list[dict]:
