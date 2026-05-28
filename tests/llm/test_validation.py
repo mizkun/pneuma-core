@@ -101,3 +101,43 @@ class TestResponseValidator:
             assert "situation" in str(e).lower() or "missing" in str(e).lower()
             return
         raise AssertionError("StructuredResponseError was not raised")
+
+    def test_strict_mode_rejects_string_to_float_coercion(self) -> None:
+        """invariant: llm-response-validated-strict — strict=True で
+        文字列→数値の暗黙 coercion が拒絶される。lax mode だと "0.5" は 0.5 にコース
+        されて pass してしまうが、strict mode では型違反として reject されるべき。"""
+        validator = ResponseValidator(_EmotionPayload)
+        with pytest.raises(StructuredResponseError):
+            validator.validate({
+                "pleasure": "0.5",  # 文字列、lax だと coerce される
+                "arousal": 0.3,
+                "dominance": 0.0,
+                "emotion_label": "happy",
+                "situation": "chat",
+            })
+
+    def test_strict_mode_rejects_bool_to_float_coercion(self) -> None:
+        """invariant: llm-response-validated-strict — strict=True で
+        bool→float の暗黙 coercion も拒絶される。"""
+        validator = ResponseValidator(_EmotionPayload)
+        with pytest.raises(StructuredResponseError):
+            validator.validate({
+                "pleasure": True,  # bool、lax だと 1.0 にコース
+                "arousal": 0.3,
+                "dominance": 0.0,
+                "emotion_label": "happy",
+                "situation": "chat",
+            })
+
+    def test_strict_mode_rejects_int_string_to_float(self) -> None:
+        """invariant: llm-response-validated-strict — strict=True で
+        整数文字列→数値の暗黙 coercion も拒絶される。"""
+        validator = ResponseValidator(_EmotionPayload)
+        with pytest.raises(StructuredResponseError):
+            validator.validate({
+                "pleasure": 0.5,
+                "arousal": "1",  # 整数文字列、lax だと 1.0 にコース
+                "dominance": 0.0,
+                "emotion_label": "happy",
+                "situation": "chat",
+            })

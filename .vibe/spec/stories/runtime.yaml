@@ -54,22 +54,31 @@ invariants:
     text: "SessionEndPipeline はセッション終了時に LLM 一回で episodic/semantic/relationship を統合更新する。"
     source_ref: src/pneuma_core/runtime/session_end_pipeline.py:SessionEndPipeline
   - id: structured-output-via-tool-use
-    text: "内部状態評価（emotion / session_end / 構造化応答）の LLM コールは Anthropic Tool Use API で JSON Schema を強制する。生テキストプロンプトでの JSON 指示は不可。"
+    text: "emotion 評価と multi_agent SessionEnd の LLM コールは Anthropic Tool Use API で JSON Schema を強制する。chat path (speech/thought/action) と single-agent SessionEndPipeline は本 invariant の対象外（patch issue で順次拡大予定）。"
     test: tests/llm/test_structured_completion.py
     source_ref: src/pneuma_core/llm/claude.py:ClaudeAdapter
     rationale: |
       LLM はプロンプトの「JSON で返せ」指示を確率的にしか守らない。
       Tool Use を使うとスキーマ違反のレスポンス自体が API レベルで起きなくなる。
+      Issue #12 (2026-05-28) では emotion / multi_agent session_end の 2 経路を
+      Tool Use 化。chat path / single-agent session_end は別 patch issue で対応。
   - id: llm-response-validated-strict
-    text: "全構造化 LLM レスポンスは Pydantic モデルで strict parse される。失敗時は N 回まで自動再試行し、それでも失敗ならログ + 明示的フォールバック値（neutral 等）を返す。"
+    text: "emotion 評価と multi_agent SessionEnd の構造化 LLM レスポンスは Pydantic モデルで strict mode (model_validate(strict=True)) parse される。失敗時は RetryableLLMCall で N 回まで自動再試行し、それでも失敗ならログ + 明示的フォールバック値（neutral 等）を返す。"
     test: tests/llm/test_validation.py
     source_ref: src/pneuma_core/llm/validation.py:ResponseValidator
+    rationale: |
+      strict=True で文字列→数値の暗黙 coercion を防ぐ。Tool Use 経路では
+      schema が API レベルで型保証してくれるが、generate-fallback 経路
+      （MockLLMAdapter など）で文字列が混入したときも明確に reject する。
   - id: llm-response-pre-strip
-    text: "Tool Use を使えないレガシーパス（テスト・モック・後方互換）でも、マークダウンコードブロック (```json ... ```) や前後の説明文は前処理で除去してから JSON parse する。"
+    text: "emotion 評価と multi_agent SessionEnd のフォールバック経路（Tool Use を使えない MockLLMAdapter 等）では、マークダウンコードブロック (```json ... ```) や前後の説明文を pre-strip してから JSON parse する。他経路（chat path / single-agent session_end / diary / user_context）は別 patch issue で順次統一予定。"
     test: tests/runtime/test_response_parser_codeblock.py
     source_ref: src/pneuma_core/runtime/response_parser.py:strip_code_fences
     rationale: |
       深層防御。Tool Use が効いていない箇所でもパースが破綻しない。
+      他の 4 経路 (parse_structured_response, session_end_pipeline,
+      diary_processor, user_context_consolidator) は今も自前 regex のままで、
+      本 invariant のスコープ拡大は別 patch issue で扱う。
 source_files:
   - src/pneuma_core/runtime/
   - src/pneuma_core/character_sheet.py

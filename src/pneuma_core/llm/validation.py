@@ -37,7 +37,11 @@ class ResponseValidator(Generic[T]):
         self._model_cls = model_cls
 
     def validate(self, data: object) -> T:
-        """data を model_cls に strict parse する.
+        """data を model_cls に strict mode で parse する.
+
+        Pydantic v2 のデフォルトは lax mode で型 coercion を行う（"0.5" → 0.5）。
+        invariant: llm-response-validated-strict に従い、strict=True で
+        暗黙の型 coercion を禁止する。
 
         Args:
             data: LLM が返した値（dict を期待）.
@@ -46,7 +50,8 @@ class ResponseValidator(Generic[T]):
             検証済みの Pydantic モデルインスタンス.
 
         Raises:
-            StructuredResponseError: dict でない / 必須欠落 / 型違反 / 制約違反.
+            StructuredResponseError: dict でない / 必須欠落 / 型違反 / 制約違反 /
+                文字列→数値などの暗黙 coercion.
         """
         if not isinstance(data, dict):
             raise StructuredResponseError(
@@ -54,7 +59,7 @@ class ResponseValidator(Generic[T]):
             )
 
         try:
-            return self._model_cls.model_validate(data)
+            return self._model_cls.model_validate(data, strict=True)
         except ValidationError as e:
             raise StructuredResponseError(
                 f"validation failed for {self._model_cls.__name__}: {e}"
