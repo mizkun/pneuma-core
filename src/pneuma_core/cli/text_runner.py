@@ -57,8 +57,14 @@ async def run(
     turn_limit: int,
     use_mock: bool,
     loop_delay_seconds: float = 0.5,
+    save_log: bool = True,
+    log_dir: str = ".vibe/references",
 ) -> int:
-    """テキストランナー本体."""
+    """テキストランナー本体.
+
+    save_log=True のとき、会話トランスクリプトを log_dir に Markdown 保存する
+    (Issue #7 Phase0-C2 の AC「実行ログを保存」)。
+    """
     llm, llm_label = _build_llm(use_mock)
     sheets = load_yurucamp_sheets()
     chars = [s.character for s in sheets]
@@ -76,26 +82,33 @@ async def run(
         circuit_breaker=cb,
     )
 
-    print("=" * 70)
-    print(f"# Pneuma multi-agent text runner")
-    print(f"# LLM   : {llm_label}")
-    print(f"# Cast  : " + " / ".join(c.name for c in chars))
-    print(f"# Ctx   : {context}")
-    print(f"# Limit : {turn_limit} turns or {duration_minutes:.1f} min")
-    print("=" * 70)
+    # print と同時にトランスクリプトへ収集する emit ヘルパー
+    transcript: list[str] = []
+
+    def emit(line: str = "") -> None:
+        print(line)
+        transcript.append(line)
+
+    emit("=" * 70)
+    emit("# Pneuma multi-agent text runner")
+    emit(f"# LLM   : {llm_label}")
+    emit("# Cast  : " + " / ".join(c.name for c in chars))
+    emit(f"# Ctx   : {context}")
+    emit(f"# Limit : {turn_limit} turns or {duration_minutes:.1f} min")
+    emit("=" * 70)
 
     started = time.monotonic()
     while True:
         result = await session.run_turn()
         if result is None:
-            print(f"\n[circuit breaker tripped] {cb.trip_reason}")
+            emit(f"\n[circuit breaker tripped] {cb.trip_reason}")
             break
 
         speaker = result.speaker.name
         u = result.utterance
         my_emo = session.character_states[result.speaker.id].emotion
         recalled = ", ".join(u.recalled_memories) if u.recalled_memories else "(none)"
-        print(
+        emit(
             f"\n[turn {result.turn_index:>3}] {speaker}\n"
             f"  speech : {u.speech}\n"
             f"  action : {u.action}\n"
@@ -112,7 +125,7 @@ async def run(
         if peers:
             for cid, em in peers:
                 ch_name = session.character_states[cid].character.name
-                print(
+                emit(
                     f"    [obs ] {ch_name}: "
                     f"{_fmt_pad(em.pleasure, em.arousal, em.dominance)} "
                     f"({em.emotion_label})"
@@ -123,62 +136,75 @@ async def run(
             await asyncio.sleep(loop_delay_seconds)
 
     # ──── Session End ────
-    print("\n" + "=" * 70)
-    print("# Session End — running per-character analysis ...")
-    print("=" * 70)
+    emit("\n" + "=" * 70)
+    emit("# Session End — running per-character analysis ...")
+    emit("=" * 70)
     end_pipeline = MultiAgentSessionEndPipeline(llm=llm)
     end_result = await end_pipeline.run(session)
 
     for per in end_result.per_character:
-        print(f"\n## {per.character_name}")
+        emit(f"\n## {per.character_name}")
         if not per.success:
-            print("  (analysis failed)")
+            emit("  (analysis failed)")
             continue
         if per.episodic:
-            print("  episodic:")
+            emit("  episodic:")
             for ep in per.episodic:
                 v = ep.get("emotional_valence", 0)
                 i = ep.get("importance", 0)
-                print(f"    - [imp={i:.2f} val={v:+.2f}] {ep.get('content','')}")
+                emit(f"    - [imp={i:.2f} val={v:+.2f}] {ep.get('content','')}")
         if per.semantic:
-            print("  semantic:")
+            emit("  semantic:")
             for sm in per.semantic:
                 c = sm.get("confidence", 0)
-                print(f"    - [conf={c:.2f}] {sm.get('content','')}")
+                emit(f"    - [conf={c:.2f}] {sm.get('content','')}")
 
     # ──── Final summary ────
-    print("\n" + "=" * 70)
-    print("# Final Snapshot")
-    print("=" * 70)
+    emit("\n" + "=" * 70)
+    emit("# Final Snapshot")
+    emit("=" * 70)
     snap = session.snapshot()
     for ch in snap["characters"]:
         e = ch["emotion"]
-        print(
+        emit(
             f"\n{ch['name']:<8} | "
             f"{_fmt_pad(e['pleasure'], e['arousal'], e['dominance'])} "
             f"({e['emotion_label']})  "
             f"spoke={ch['speak_count']}"
         )
         if ch["relations"]:
-            print("  relations:")
+            emit("  relations:")
             for tid, rel in ch["relations"].items():
-                print(
+                emit(
                     f"    → {rel['target_name']:<8} "
                     f"closeness={rel['closeness']:.3f} "
                     f"trust={rel['trust']:.3f}"
                 )
         if ch["recent_episodic"]:
-            print("  recent_episodic:")
+            emit("  recent_episodic:")
             for ep in ch["recent_episodic"]:
-                print(f"    - {ep}")
+                emit(f"    - {ep}")
 
     elapsed = time.monotonic() - started
-    print("\n" + "=" * 70)
-    print(
+    emit("\n" + "=" * 70)
+    emit(
         f"# Done: {session.snapshot()['turn_index']} turns in {elapsed:.1f}s "
         f"(circuit={cb.state.value})"
     )
-    print("=" * 70)
+    emit("=" * 70)
+
+    # ──── ログ保存 ────
+    if save_log:
+        from datetime import datetime, timezone
+        from pathlib import Path
+
+        out_dir = Path(log_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        log_path = out_dir / f"text-runner-trial-{ts}.md"
+        log_path.write_text("\n".join(transcript) + "\n", encoding="utf-8")
+        print(f"\n[log saved] {log_path}")
+
     return 0
 
 
@@ -197,6 +223,10 @@ def main() -> None:
                         help="Force MockLLMAdapter even if ANTHROPIC_API_KEY is set")
     parser.add_argument("--loop-delay", type=float, default=0.1,
                         help="Sleep between turns in seconds (default: 0.1)")
+    parser.add_argument("--no-save-log", action="store_true",
+                        help="Disable saving the transcript to .vibe/references/")
+    parser.add_argument("--log-dir", type=str, default=".vibe/references",
+                        help="Directory to save transcript log (default: .vibe/references)")
     parser.add_argument("-v", "--verbose", action="store_true")
 
     args = parser.parse_args()
@@ -210,6 +240,8 @@ def main() -> None:
             turn_limit=args.turn_limit,
             use_mock=args.use_mock_llm,
             loop_delay_seconds=args.loop_delay,
+            save_log=not args.no_save_log,
+            log_dir=args.log_dir,
         ))
     except KeyboardInterrupt:
         print("\n^C interrupted", file=sys.stderr)
