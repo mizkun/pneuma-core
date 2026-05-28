@@ -119,6 +119,12 @@ class SessionDriver:
                     "speak_count": 0,
                     "relations": {},
                     "recent_episodic": [],
+                    "intent": {
+                        "surface_goal": "",
+                        "hidden_goal": None,
+                        "intensity": 0.0,
+                    },
+                    "recent_thought": "",
                 }
                 for s in sheets
             ],
@@ -261,6 +267,7 @@ class SessionDriver:
             },
             "utterance": {
                 "speech": u.speech,
+                "thought": u.thought,
                 "action": u.action,
                 "emotion_label": u.emotion_label,
                 "pad": list(u.pad),
@@ -540,6 +547,25 @@ function badge(label) {
   return `<span class="badge ${label}">${label}</span>`;
 }
 
+function renderIntent(c) {
+  // 思惑（短期ゴール）の表示 (Issue #20)。surface=表のゴール / hidden=裏の本音。
+  const it = c.intent;
+  if (!it || !it.surface_goal) return "";
+  const surface = escapeHtml(it.surface_goal);
+  const hidden = it.hidden_goal ? escapeHtml(it.hidden_goal) : "（なし）";
+  const intensity = (typeof it.intensity === "number") ? it.intensity.toFixed(2) : "?";
+  const thought = c.recent_thought ? escapeHtml(c.recent_thought) : "";
+  const thoughtHtml = thought
+    ? `<div style="font-size:10px; color:var(--dim); margin-top:2px;">本音: ${thought}</div>`
+    : "";
+  return `<div style="font-size:11px; margin-bottom:6px; padding:4px 6px;
+      background:rgba(255,255,255,0.04); border-radius:4px;">
+    <div>思惑(表): ${surface} <span style="color:var(--dim)">[強さ${intensity}]</span></div>
+    <div style="color:var(--dim)">裏: ${hidden}</div>
+    ${thoughtHtml}
+  </div>`;
+}
+
 function renderCharacters(snap) {
   const div = document.getElementById("characters");
   div.innerHTML = (snap.characters || []).map(c => {
@@ -554,6 +580,7 @@ function renderCharacters(snap) {
       <div style="font-size: 11px; color: var(--dim); margin-bottom: 6px;">
         spoke=${c.speak_count}
       </div>
+      ${renderIntent(c)}
       <div class="pad-label"><span>Pleasure</span><span>${e.pleasure.toFixed(2)}</span></div>
       ${padBar(e.pleasure)}
       <div class="pad-label"><span>Arousal</span><span>${e.arousal.toFixed(2)}</span></div>
@@ -625,6 +652,10 @@ function appendUtterance(payload) {
   const silent = !u.speech ? "silent" : "";
   const speech = u.speech || "（沈黙）";
   const action = u.action ? `<div class="action">（${u.action}）</div>` : "";
+  // 本音 (thought) を speech と分けて表示 (Issue #20: speech-thought-separation)
+  const thought = u.thought
+    ? `<div class="action" style="color:var(--dim); font-style:italic;">本音: ${escapeHtml(u.thought)}</div>`
+    : "";
   const padTxt = `P=${u.pad[0].toFixed(2)} A=${u.pad[1].toFixed(2)} D=${u.pad[2].toFixed(2)}`;
   const html = `<div class="utt ${kind} ${silent}">
     <div class="speaker">
@@ -634,6 +665,7 @@ function appendUtterance(payload) {
       <span class="badge">${padTxt}</span>
     </div>
     <div class="speech">${escapeHtml(speech)}</div>
+    ${thought}
     ${action}
   </div>`;
   c.insertAdjacentHTML("beforeend", html);

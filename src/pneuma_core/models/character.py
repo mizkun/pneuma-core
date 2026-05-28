@@ -24,3 +24,6 @@ class Character:
     background: str | None = None
     personality_description: str | None = None
     values_description: str | None = None
+    # 長期欲求（根底で求めているもの）。思惑エンジン (Issue #20) が短期ゴール
+    # を創発させる素地。YAML の desires フィールドから読み込む。
+    desires: str | None = None

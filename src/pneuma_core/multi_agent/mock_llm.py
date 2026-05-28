@@ -84,6 +84,31 @@ _RESPONSE_POOL: dict[str, list[tuple[str, str]]] = {
 }
 
 
+# キャラ名 → 思惑（surface_goal, hidden_goal, intensity）プール (Issue #20).
+# intent-emergent-not-scripted を mock でも担保するため複数案からランダムに選ぶ。
+_INTENT_POOL: dict[str, list[tuple[str, str, float]]] = {
+    "なでしこ": [
+        ("みんなで美味しいご飯を食べる流れにしたい", "褒められたくてうずうずしてる", 0.7),
+        ("次のキャンプの話で盛り上げたい", "本当はただ構ってほしいだけ", 0.6),
+        ("自分の好きなものをみんなに気に入ってほしい", "", 0.65),
+    ],
+    "千明": [
+        ("自分の企画をこの場で通したい", "本当はなでしこに負けたくないだけ", 0.85),
+        ("会話の主導権を握ってリードしたい", "リーダーとして認められたい", 0.8),
+        ("みんなを巻き込んで無茶な計画を実現したい", "", 0.75),
+    ],
+    "あおい": [
+        ("対立しそうな空気を穏やかに収めたい", "本当は自分が一番気疲れしたくない", 0.6),
+        ("みんなが仲良くいられる落としどころを探したい", "", 0.55),
+        ("二人を見守りつつ場の安全を保ちたい", "千明の暴走をやんわり止めたい", 0.5),
+    ],
+    "_default": [
+        ("この会話で自分の考えを伝えたい", "", 0.5),
+        ("場の空気を心地よく保ちたい", "", 0.45),
+    ],
+}
+
+
 def _default_payload_for_schema(schema: dict) -> dict:
     """Build a minimal dict satisfying the JSON Schema's required fields (Issue #12)."""
     if not isinstance(schema, dict):
@@ -112,21 +137,61 @@ def _default_payload_for_schema(schema: dict) -> dict:
 def _detect_character_name(system_prompt: str) -> str:
     """system_prompt からキャラ名を抽出（プールを引くキー）.
 
-    `あなたは「<NAME>」というキャラクターです` の <NAME> を最優先で取る。
-    マッチしなければ単純な部分文字列検索でフォールバック。
+    優先順位:
+        1. `あなたは「<NAME>」というキャラクターです`（発話プロンプト）の <NAME>。
+        2. `名前: <NAME>`（思惑生成プロンプト, Issue #20）の <NAME>。
+        3. 単純な部分文字列検索（profile が他キャラ名を含むと誤検出しうるので最後）。
+
+    部分文字列フォールバックを最後に置く理由: あおいの profile は「千明の暴走を
+    いなす」のように他キャラ名を含むため、構造化されたマーカー行を優先しないと
+    別キャラのプールを引いてしまう。
     """
-    # First-line speaker prompt pattern
+    # 1. 発話プロンプト「あなたは「<NAME>」という」
     m = re.search(r"あなたは「?([぀-ヿ一-鿿ぁ-んァ-ン]{1,10})」?という", system_prompt)
     if m:
         cand = m.group(1)
         if cand in _RESPONSE_POOL:
             return cand
 
+    # 2. 思惑生成プロンプト「名前: <NAME>」
+    m = re.search(r"名前[:：]\s*([぀-ヿ一-鿿ぁ-んァ-ン]{1,10})", system_prompt)
+    if m:
+        cand = m.group(1)
+        if cand in _RESPONSE_POOL:
+            return cand
+
+    # 3. 部分文字列フォールバック
     for name in ("なでしこ", "千明", "あおい"):
         if name in system_prompt:
             return name
 
     return "_default"
+
+
+# Session が speech プロンプトに思惑を注入するときのマーカー (Issue #20).
+# mock がこの行を拾って thought に本音を反映する。
+_SURFACE_MARKER = "表のゴール:"
+_HIDDEN_MARKER = "裏の本音:"
+
+
+def _extract_injected_marker(system_prompt: str, marker: str) -> str:
+    """system_prompt 中の `<marker> <値>` 行から値を取り出す（無ければ ""）."""
+    idx = system_prompt.find(marker)
+    if idx == -1:
+        return ""
+    rest = system_prompt[idx + len(marker):]
+    line = rest.split("\n", 1)[0].strip()
+    if line in ("（なし）", "(none)", "なし"):
+        return ""
+    return line
+
+
+def _extract_injected_surface_goal(system_prompt: str) -> str:
+    return _extract_injected_marker(system_prompt, _SURFACE_MARKER)
+
+
+def _extract_injected_hidden_goal(system_prompt: str) -> str:
+    return _extract_injected_marker(system_prompt, _HIDDEN_MARKER)
 
 
 def _detect_request_kind(system_prompt: str) -> str:
@@ -221,6 +286,8 @@ class MockLLMAdapter:
             return json.loads(self._gen_emotion(request))
         if tool_name == "record_session_memories":
             return json.loads(self._gen_session_end())
+        if tool_name == "report_intent":
+            return self._gen_intent(system_prompt)
 
         # Generic fallback: 各 required を最小値で埋める
         return _default_payload_for_schema(schema)
@@ -230,7 +297,24 @@ class MockLLMAdapter:
         pool = _RESPONSE_POOL.get(name, _RESPONSE_POOL["_default"])
         speech, action = self._rng.choice(pool)
 
-        # 「内心」っぽい thought を付ける
+        # speech-thought-separation (Issue #20):
+        # system_prompt に思惑（hidden_goal）が注入されていれば、thought は
+        # その本音を反映する（表の speech とギャップが出る）。
+        thought = self._gen_thought(request.system_prompt)
+
+        return json.dumps(
+            {"speech": speech, "thought": thought, "action": action},
+            ensure_ascii=False,
+        )
+
+    def _gen_thought(self, system_prompt: str) -> str:
+        """思惑（特に hidden_goal）を反映した内心を生成する (Issue #20)."""
+        hidden = _extract_injected_hidden_goal(system_prompt)
+        if hidden:
+            return f"（{hidden}……それは言えないけど）"
+        surface = _extract_injected_surface_goal(system_prompt)
+        if surface:
+            return f"（{surface}……そこに持っていきたいな）"
         thoughts = [
             "（みんな楽しそうだな）",
             "（次の話題どうしよう）",
@@ -239,12 +323,22 @@ class MockLLMAdapter:
             "（こういう時間、好きだな）",
             "",
         ]
-        thought = self._rng.choice(thoughts)
+        return self._rng.choice(thoughts)
 
-        return json.dumps(
-            {"speech": speech, "thought": thought, "action": action},
-            ensure_ascii=False,
-        )
+    def _gen_intent(self, system_prompt: str) -> dict:
+        """report_intent tool 用の構造化思惑を返す (Issue #20).
+
+        invariant: intent-emergent-not-scripted — 同じキャラでも複数案から
+        ランダム選択して、思惑の展開が決定論的にならないようにする。
+        """
+        name = _detect_character_name(system_prompt)
+        pool = _INTENT_POOL.get(name, _INTENT_POOL["_default"])
+        surface, hidden, intensity = self._rng.choice(pool)
+        return {
+            "surface_goal": surface,
+            "hidden_goal": hidden,
+            "intensity": intensity,
+        }
 
     def _gen_emotion(self, request: LLMRequest) -> str:
         # 性格抽出は雑にやる: extraversion / neuroticism のキーワードから baseline 推定

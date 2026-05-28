@@ -97,6 +97,19 @@ async def run(
     emit(f"# Limit : {turn_limit} turns or {duration_minutes:.1f} min")
     emit("=" * 70)
 
+    # ──── 思惑（短期ゴール）の生成と表示 (Issue #20) ────
+    await session.ensure_intents()
+    emit("\n# 思惑（短期ゴール）— 長期欲求 + 状況から創発")
+    for ch in chars:
+        intent = session.intents.get(ch.id)
+        if intent is None:
+            continue
+        hidden = intent.hidden_goal or "（なし）"
+        emit(
+            f"  {ch.name:<8} 思惑(表): {intent.surface_goal}\n"
+            f"  {'':<8} 本音(裏): {hidden}  [強さ={intent.intensity:.2f}]"
+        )
+
     started = time.monotonic()
     while True:
         result = await session.run_turn()
@@ -108,9 +121,11 @@ async def run(
         u = result.utterance
         my_emo = session.character_states[result.speaker.id].emotion
         recalled = ", ".join(u.recalled_memories) if u.recalled_memories else "(none)"
+        thought = u.thought or "（なし）"
         emit(
             f"\n[turn {result.turn_index:>3}] {speaker}\n"
             f"  speech : {u.speech}\n"
+            f"  本音   : {thought}\n"
             f"  action : {u.action}\n"
             f"  PAD    : {_fmt_pad(my_emo.pleasure, my_emo.arousal, my_emo.dominance)} "
             f"emotion={my_emo.emotion_label}\n"
