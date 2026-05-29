@@ -16,6 +16,7 @@ async def test_text_runner_completes_within_turn_limit(capsys) -> None:
         turn_limit=5,
         use_mock=True,
         loop_delay_seconds=0.0,
+        save_log=False,
     )
     assert rc == 0
     captured = capsys.readouterr()
@@ -39,8 +40,50 @@ async def test_text_runner_short_session(capsys) -> None:
         turn_limit=2,
         use_mock=True,
         loop_delay_seconds=0.0,
+        save_log=False,
     )
     assert rc == 0
     out = capsys.readouterr().out
     assert "Session End" in out
     assert "Final Snapshot" in out
+
+
+@pytest.mark.asyncio
+async def test_text_runner_saves_transcript_log(tmp_path) -> None:
+    """AC (Issue #7): save_log=True で log_dir にトランスクリプトが Markdown 保存される."""
+    rc = await run(
+        duration_minutes=1.0,
+        context="ログ保存テスト",
+        turn_limit=3,
+        use_mock=True,
+        loop_delay_seconds=0.0,
+        save_log=True,
+        log_dir=str(tmp_path),
+    )
+    assert rc == 0
+
+    logs = list(tmp_path.glob("text-runner-trial-*.md"))
+    assert len(logs) == 1, f"expected 1 transcript log, found {len(logs)}"
+
+    content = logs[0].read_text(encoding="utf-8")
+    # ヘッダとキャストが残っている
+    assert "Pneuma multi-agent text runner" in content
+    assert "なでしこ" in content
+    assert "Session End" in content
+    assert "Final Snapshot" in content
+
+
+@pytest.mark.asyncio
+async def test_text_runner_no_save_log_writes_nothing(tmp_path) -> None:
+    """save_log=False のとき log_dir にファイルが作られない."""
+    rc = await run(
+        duration_minutes=1.0,
+        context="保存しないテスト",
+        turn_limit=2,
+        use_mock=True,
+        loop_delay_seconds=0.0,
+        save_log=False,
+        log_dir=str(tmp_path),
+    )
+    assert rc == 0
+    assert list(tmp_path.glob("*.md")) == []

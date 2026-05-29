@@ -177,6 +177,7 @@ class CharacterSheet:
             background=data.get("background"),
             personality_description=data.get("personality_description"),
             values_description=data.get("values_description"),
+            desires=data.get("desires"),
         )
 
         initial_state = None
@@ -214,7 +215,8 @@ class CharacterSheet:
 
         # Optional string fields
         for field in ("profile", "appearance", "speaking_style",
-                      "background", "personality_description", "values_description"):
+                      "background", "personality_description", "values_description",
+                      "desires"):
             val = getattr(c, field)
             if val is not None:
                 data[field] = val

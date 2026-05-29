@@ -4,6 +4,9 @@ invariants:
 - thinking-on-every-turn: 各ターンで全キャラの内部状態は更新される（PAD推定）
 - observation-turn-state-update: 他キャラの発話は自分の history に積まれる
 - utterance-action-pair: 出力は (speech, action) のペア
+- intent-driven-utterance: 各キャラの思惑（surface_goal）が発話プロンプトに注入され
+  会話を駆動する。FloorController も intent_relevance を加味する。
+- speech-thought-separation: speech（表）と thought（裏の本音）を分離記録する。
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from pneuma_core.multi_agent.floor_controller import (
     FloorController,
     Utterance,
 )
+from pneuma_core.multi_agent.intent import Intent, IntentGenerator
 from pneuma_core.runtime.emotion_engine import EmotionEngine, pad_to_label
 from pneuma_core.runtime.response_parser import parse_structured_response
 
@@ -46,6 +50,8 @@ class CharacterRuntimeState:
     # PAD の履歴（時系列観察用）
     pad_history: list[tuple[float, float, float, str]] = field(default_factory=list)
     speak_count: int = 0
+    # 直近の内心（speech-thought-separation の観測用）
+    last_thought: str = ""
 
 
 @dataclass
@@ -88,9 +94,18 @@ _SPEECH_SYSTEM_PROMPT = """\
 ## 共有コンテクスト
 {context}
 
+## あなたの今の思惑（短期ゴール）
+表のゴール: {surface_goal}
+裏の本音: {hidden_goal}
+思惑の強さ: {intensity}
+
 ## 出力ルール
 - 必ず以下の JSON 形式で 1 回だけ出力すること
 - speech は 1〜2 文以内。長文は禁止。沈黙してもよい（その場合は ""）
+- speech（表の発言）は、上の「表のゴール（思惑）」に向かって自然に会話を進めること。
+  ただし視聴者を意識した演技はしない。あくまで自分の思惑のため。
+- thought（心の中の声）は、上の「裏の本音」を踏まえた内心を書く。
+  表の speech と食い違ってよい（例: 表では強気だが内心は引けないだけ）。
 - action は 1 文以内。例: 「笑顔で頷く」「下を向く」「両手を握る」
 - 自分らしい口調・性格を保つこと
 
@@ -114,6 +129,7 @@ class MultiAgentSession:
         floor_controller: FloorController | None = None,
         circuit_breaker: CircuitBreaker | None = None,
         emotion_engine: EmotionEngine | None = None,
+        intent_generator: IntentGenerator | None = None,
         shared_context: str = "",
         session_id: str | None = None,
     ) -> None:
@@ -122,9 +138,13 @@ class MultiAgentSession:
         self._floor = floor_controller or FloorController()
         self.circuit_breaker = circuit_breaker or CircuitBreaker()
         self._emotion_engine = emotion_engine or EmotionEngine(llm=llm)
+        self._intent_generator = intent_generator or IntentGenerator(llm=llm)
         self.shared_context = shared_context
         self.session_id = session_id or f"masess-{uuid.uuid4().hex[:12]}"
         self.started_at = datetime.now(timezone.utc)
+
+        # キャラごとの思惑（短期ゴール）。ensure_intents() で遅延生成する。
+        self.intents: dict[str, Intent] = {}
 
         # キャラごとの内部状態
         self.character_states: dict[str, CharacterRuntimeState] = {}
@@ -150,6 +170,25 @@ class MultiAgentSession:
 
         self._turn_index = 0
 
+    async def ensure_intents(self) -> dict[str, Intent]:
+        """各キャラの思惑（短期ゴール）を生成して保持する（未生成時のみ）.
+
+        invariant: intent-driven-utterance — 会話開始前に全キャラの思惑を
+        長期欲求 + shared_context から創発させる。冪等（既に生成済みなら再生成
+        しない）。
+
+        Returns:
+            char_id → Intent の dict（self.intents と同一参照）。
+        """
+        for ch in self.conversation.participants:
+            if ch.id in self.intents:
+                continue
+            self.intents[ch.id] = await self._intent_generator.generate(
+                character=ch,
+                shared_context=self.shared_context,
+            )
+        return self.intents
+
     async def run_turn(self) -> TurnResult | None:
         """1 ターン進める.
 
@@ -159,13 +198,17 @@ class MultiAgentSession:
         if not self.circuit_breaker.allow():
             return None
 
+        # 思惑を未生成なら生成（会話を駆動する短期ゴール）
+        await self.ensure_intents()
+
         self._turn_index += 1
         self.circuit_breaker.record_turn()
 
-        # 1. FloorController で発話者決定
+        # 1. FloorController で発話者決定（思惑を加味）
         speaker = self._floor.next_speaker(
             history=self.conversation.history,
             participants=self.conversation.participants,
+            intents=self.intents,
         )
         state = self.character_states[speaker.id]
 
@@ -239,7 +282,12 @@ class MultiAgentSession:
         speaker: Character,
         state: CharacterRuntimeState,
     ) -> Utterance:
-        """LLM を呼んで 1 ターンぶんの speech/action を生成."""
+        """LLM を呼んで 1 ターンぶんの speech/thought/action を生成.
+
+        invariants: intent-driven-utterance（思惑を注入）,
+        speech-thought-separation（thought を別フィールドで記録）。
+        """
+        intent = self.intents.get(speaker.id)
         system_prompt = _SPEECH_SYSTEM_PROMPT.format(
             name=speaker.name,
             profile=speaker.profile or "",
@@ -255,6 +303,10 @@ class MultiAgentSession:
             arousal=round(state.emotion.arousal, 2),
             dominance=round(state.emotion.dominance, 2),
             context=self.shared_context or "（特になし）",
+            surface_goal=intent.surface_goal if intent else "（特になし）",
+            hidden_goal=(intent.hidden_goal if intent and intent.hidden_goal
+                         else "（なし）"),
+            intensity=round(intent.intensity, 2) if intent else 0.0,
         )
 
         # speaker 視点で history を渡す
@@ -285,12 +337,17 @@ class MultiAgentSession:
 
         speech = structured.speech or ""
         action = structured.action or ""
+        thought = structured.thought or ""
+
+        # speech-thought-separation: 内心を runtime state に保持（観測用）
+        state.last_thought = thought
 
         return Utterance(
             speaker_id=speaker.id,
             speaker_name=speaker.name,
             speech=speech,
             action=action,
+            thought=thought,
             emotion_label=state.emotion.emotion_label,
             pad=(state.emotion.pleasure, state.emotion.arousal,
                  state.emotion.dominance),
@@ -334,6 +391,8 @@ class MultiAgentSession:
                         for pid, rel in st.relations.items()
                     },
                     "recent_episodic": st.episodic[-5:],
+                    "intent": self._intent_snapshot(st.character.id),
+                    "recent_thought": st.last_thought,
                 }
                 for st in self.character_states.values()
             ],
@@ -342,10 +401,22 @@ class MultiAgentSession:
                     "speaker_id": u.speaker_id,
                     "speaker_name": u.speaker_name,
                     "speech": u.speech,
+                    "thought": u.thought,
                     "action": u.action,
                     "emotion_label": u.emotion_label,
                     "pad": list(u.pad),
                 }
                 for u in self.conversation.history[-20:]
             ],
+        }
+
+    def _intent_snapshot(self, char_id: str) -> dict[str, Any]:
+        """1 キャラの思惑を snapshot 用 dict にする（未生成なら空）."""
+        intent = self.intents.get(char_id)
+        if intent is None:
+            return {"surface_goal": "", "hidden_goal": None, "intensity": 0.0}
+        return {
+            "surface_goal": intent.surface_goal,
+            "hidden_goal": intent.hidden_goal,
+            "intensity": round(intent.intensity, 2),
         }
