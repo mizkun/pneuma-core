@@ -238,21 +238,20 @@ async def test_quirk_on_without_quirk_text_is_noop() -> None:
 
 
 @pytest.mark.asyncio
-async def test_terse_off_keeps_default_max_tokens() -> None:
-    """AC-4: enable_terse False のとき従来の max_tokens が使われる."""
+async def test_terse_keeps_json_safe_max_tokens() -> None:
+    """AC-4: enable_terse でも max_tokens は JSON 構造を壊さない値を維持する.
+
+    terse の短さは max_tokens 削減ではなくプロンプト指示 (_TERSE_SECTION) で
+    担保する。max_tokens で絞ると speech/thought/action の JSON が途中で切れて
+    パース失敗し、生 JSON が speech に漏れる（Issue #22 QA で発覚した回帰を防ぐ）。
+    """
     chars = [_make_char("a", "なでしこ", extraversion=0.9),
              _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
-    session = _session(chars, FunEngineConfig(), llm=llm)
+    session = _session(chars, FunEngineConfig(enable_terse=True), llm=llm)
     await session.run_turn()
     assert llm.last_chat_request is not None
-    default_tokens = llm.last_chat_request.max_tokens
-
-    llm2 = RecordingMockLLM(seed=1)
-    session2 = _session(chars, FunEngineConfig(enable_terse=True), llm=llm2)
-    await session2.run_turn()
-    assert llm2.last_chat_request is not None
-    assert llm2.last_chat_request.max_tokens < default_tokens
+    assert llm.last_chat_request.max_tokens >= 200
 
 
 @pytest.mark.asyncio

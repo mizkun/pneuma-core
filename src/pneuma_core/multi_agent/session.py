@@ -383,8 +383,11 @@ class MultiAgentSession:
                 "content": f"今、{self.shared_context or '部室で'} です。何か話して。",
             }]
 
-        # テンポ (enable_terse): 短い発話に絞る → max_tokens を抑える（メカニカル）
-        max_tokens = 96 if self.fun_config.enable_terse else 256
+        # テンポ (enable_terse): speech を短くするのはプロンプト指示 (_TERSE_SECTION)
+        # で担保する。max_tokens は speech/thought/action の JSON 構造を壊さない値を
+        # 常に確保する（terse で絞ると JSON が途中で切れてパース失敗し、生 JSON が
+        # speech に漏れて thought/action が消えるため。Issue #22 QA で発覚）。
+        max_tokens = 256
 
         request = LLMRequest(
             system_prompt=system_prompt,
