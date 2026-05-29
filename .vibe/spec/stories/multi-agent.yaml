@@ -114,6 +114,29 @@ invariants:
       で生成して system_prompt に注入し、生成時の逸脱を防ぐ。
     source_ref: src/pneuma_core/multi_agent/session.py:build_cast_roster_section
     test: tests/multi_agent/test_cast_naming.py
+  - id: canon-continuity
+    text: |
+      storage を指定して MultiAgentSession を動かすと、正史（1 本の連続した世界線）が
+      キャラ ID 単位で積み上がる。セッション終了時に persist_canon で各キャラの新規
+      episodic 記憶・最終 emotion・関係性(relations) を storage に永続化し、次セッション
+      開始時に load_canon が前回状態を読み戻して CharacterRuntimeState を初期化する
+      （前回の emotion・relations を引き継ぎ、記憶を持った状態で始まる）。永続化の単位は
+      session_id ではなくキャラ ID。これにより「セッション A の出来事がセッション B の
+      キャラに引き継がれる」連続性が成立する。storage 未指定なら no-op（in-memory のみ・
+      既存挙動不変）で、正史は積まない。
+    source_ref: src/pneuma_core/multi_agent/session.py:persist_canon
+    test: tests/multi_agent/test_canon_continuity.py
+  - id: memory-rag-recall
+    text: |
+      storage 指定時、発話プロンプトに注入する想起記憶は episodic の単純スライス
+      （state.episodic[-3:]）ではなく、MemorySearchEngine の性格バイアス検索の結果を使う。
+      いま話している話題（直前発話 + shared_context）の embedding で過去記憶をスコアリング
+      し、トピック関連性が一定以上の記憶のみを想起する（importance だけで浮上する無関連
+      記憶は想起しない）。これにより差別化軸2「記憶バイアス RAG」が会話ループに配線される。
+      storage / embedding が無い、または母集団が空ならフォールバックとして従来どおり直近
+      episodic スライスを返す（既存挙動を保つ）。
+    source_ref: src/pneuma_core/multi_agent/session.py:_rag_recall
+    test: tests/multi_agent/test_canon_continuity.py
 source_files:
   - src/pneuma_core/
 depends_on:

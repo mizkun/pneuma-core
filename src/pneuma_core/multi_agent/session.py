@@ -7,6 +7,11 @@ invariants:
 - intent-driven-utterance: 各キャラの思惑（surface_goal）が発話プロンプトに注入され
   会話を駆動する。FloorController も intent_relevance を加味する。
 - speech-thought-separation: speech（表）と thought（裏の本音）を分離記録する。
+- canon-continuity: storage 指定時、セッション終了で各キャラの記憶/感情/関係が
+  キャラ ID 単位で永続化され（persist_canon）、次セッション開始時にロードされる
+  （load_canon）。正史は 1 本で、session ではなくキャラ ID を軸に積み上がる。
+- memory-rag-recall: storage 指定時、発話プロンプトの想起記憶は episodic の単純
+  スライスではなく MemorySearchEngine の性格バイアス検索結果を使う。
 """
 
 from __future__ import annotations
@@ -15,13 +20,17 @@ import logging
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pneuma_core.emotion.baseline import personality_to_pad_baseline
 from pneuma_core.llm.adapter import LLMAdapter, LLMRequest
+from pneuma_core.memory.search import MemorySearchEngine
+from pneuma_core.memory.similarity import cosine_similarity
 from pneuma_core.models.character import Character
 from pneuma_core.models.emotion import EmotionalState
+from pneuma_core.models.memory import EpisodicMemory
 from pneuma_core.models.message import StructuredResponse
+from pneuma_core.models.relation import Relation
 from pneuma_core.multi_agent.circuit_breaker import CircuitBreaker
 from pneuma_core.multi_agent.conversation import Conversation
 from pneuma_core.multi_agent.floor_controller import (
@@ -36,7 +45,17 @@ from pneuma_core.multi_agent.intent import Intent, IntentGenerator
 from pneuma_core.runtime.emotion_engine import EmotionEngine, pad_to_label
 from pneuma_core.runtime.response_parser import parse_structured_response
 
+if TYPE_CHECKING:
+    from pneuma_core.protocols.embedding import EmbeddingService
+    from pneuma_core.storage.backend import StorageBackend
+
 logger = logging.getLogger(__name__)
+
+# 正史 RAG 想起で 1 ターンに注入する過去記憶の最大件数 (memory-rag-recall)。
+_RAG_RECALL_LIMIT = 3
+# 想起のトピック関連性ゲート: 話題 embedding とのコサイン類似度がこれ未満の
+# 記憶は「今の話題とは無関係」とみなし想起しない（importance だけで浮上するのを防ぐ）。
+_RAG_RELEVANCE_THRESHOLD = 0.1
 
 
 @dataclass
@@ -47,6 +66,11 @@ class CharacterRuntimeState:
     emotion: EmotionalState
     # キャラごとの簡易 episodic 記憶（このセッション中の出来事）
     episodic: list[str] = field(default_factory=list)
+    # 正史からロードした過去の episodic 記憶（embedding 付き、RAG 検索の母集団）。
+    # canon-continuity でロードし、memory-rag-recall で検索する (Issue #31)。
+    recalled_episodic_pool: list[EpisodicMemory] = field(default_factory=list)
+    # 既に storage に永続化済みの episodic 内容（persist_canon の二重保存防止）。
+    persisted_episodic_contents: set[str] = field(default_factory=set)
     # キャラごとの関係性（target_id → closeness, trust）
     relations: dict[str, dict[str, float]] = field(default_factory=dict)
     # PAD の履歴（時系列観察用）
@@ -223,6 +247,8 @@ class MultiAgentSession:
         shared_context: str = "",
         session_id: str | None = None,
         fun_config: FunEngineConfig | None = None,
+        storage: StorageBackend | None = None,
+        embedding_service: EmbeddingService | None = None,
     ) -> None:
         self.conversation = conversation
         self._llm = llm
@@ -231,6 +257,12 @@ class MultiAgentSession:
         self._emotion_engine = emotion_engine or EmotionEngine(llm=llm)
         self._intent_generator = intent_generator or IntentGenerator(llm=llm)
         self.shared_context = shared_context
+        # 正史の連続性 (canon-continuity) / RAG 想起 (memory-rag-recall)。
+        # storage を渡すと「ロード → 会話 → SessionEnd で保存」のループが閉じる。
+        # None なら従来どおり in-memory（既存挙動は不変・load/persist は no-op）。
+        self._storage = storage
+        self._embedding_service = embedding_service
+        self._memory_search = MemorySearchEngine()
         # 面白さエンジンのトグル (Issue #22)。デフォルトは enable_intent のみ True
         # で #20 の挙動を保つ（fun-engine-toggleable）。FunEngineConfig は frozen
         # なので共有デフォルトでも安全。
@@ -264,6 +296,203 @@ class MultiAgentSession:
                 }
 
         self._turn_index = 0
+
+    # ── 正史の連続性 (canon-continuity, Issue #31) ────────────────────────
+
+    async def load_canon(self) -> None:
+        """前回までの正史を storage からロードして各キャラの初期状態にする.
+
+        invariant: canon-continuity — 正史は 1 本でキャラ ID 単位に積み上がる。
+        セッション開始時に各キャラの前回 emotion・関係性・episodic 記憶を storage
+        から読み戻し、CharacterRuntimeState を「記憶を持った状態」で始める。
+
+        storage 未指定なら no-op（in-memory モードでは正史を積まない）。冪等で、
+        失敗してもセッションは続行できるよう例外は握りつぶす（in-memory 既定値）。
+        """
+        if self._storage is None:
+            return
+
+        for ch in self.conversation.participants:
+            state = self.character_states[ch.id]
+            try:
+                # 1. 前回の最終 emotion を引き継ぐ
+                saved_emotion = await self._storage.get_emotional_state(ch.id)
+                if saved_emotion is not None:
+                    state.emotion = saved_emotion
+
+                # 2. 過去の episodic 記憶をロード。
+                #    - recalled_episodic_pool: RAG 検索の母集団（embedding 付き）
+                #    - state.episodic: キャラが「記憶を持った状態」で始まるよう、
+                #      ロードした記憶の内容を carry-over する（観測・スライス用）
+                episodic = await self._storage.get_episodic_memories(ch.id)
+                state.recalled_episodic_pool = list(episodic)
+                loaded_contents = [m.content for m in episodic]
+                state.episodic = list(loaded_contents)
+                # 既に永続化済みの内容を覚えておき、persist_canon での二重保存を防ぐ
+                state.persisted_episodic_contents = set(loaded_contents)
+
+                # 3. 関係性を引き継ぐ（このキャラが owner の Relation）
+                relations = await self._storage.list_relations(owner_id=ch.id)
+                for rel in relations:
+                    if rel.target_id not in state.relations:
+                        # このセッションに居ないキャラとの関係も観測のため残す
+                        state.relations[rel.target_id] = {
+                            "closeness": rel.closeness,
+                            "trust": rel.trust,
+                            "target_name": rel.target_name,
+                        }
+                    else:
+                        state.relations[rel.target_id]["closeness"] = rel.closeness
+                        state.relations[rel.target_id]["trust"] = rel.trust
+                        state.relations[rel.target_id]["target_name"] = rel.target_name
+            except Exception:
+                logger.warning(
+                    "load_canon failed for %s, starting fresh", ch.name,
+                    exc_info=True,
+                )
+
+    async def persist_canon(self) -> None:
+        """セッション終了時、各キャラの記憶/感情/関係を storage に永続化する.
+
+        invariant: canon-continuity — SessionEnd 後に呼び、正史を前に進める。
+        永続化する単位はキャラ ID（session_id ではない）。次セッションの
+        load_canon がこれを読み戻すことで「セッション A の出来事がセッション B
+        のキャラに引き継がれる」連続性が成立する。
+
+        storage 未指定なら no-op。embedding_service があれば新規 episodic に
+        embedding を付与し、次セッションの RAG 検索対象にする。
+        """
+        if self._storage is None:
+            return
+
+        for ch in self.conversation.participants:
+            state = self.character_states[ch.id]
+            try:
+                # 1. 最終 emotion を保存（次セッションの開始 emotion になる）
+                await self._storage.save_emotional_state(ch.id, state.emotion)
+
+                # 2. このセッションで生まれた新規 episodic を永続化
+                await self._persist_new_episodic(ch.id, state)
+
+                # 3. 関係性を Relation として永続化
+                await self._persist_relations(ch.id, state)
+            except Exception:
+                logger.warning(
+                    "persist_canon failed for %s", ch.name, exc_info=True,
+                )
+
+    async def _persist_new_episodic(
+        self, char_id: str, state: CharacterRuntimeState
+    ) -> None:
+        """このセッションで生まれた episodic を embedding 付きで保存する.
+
+        ロード済み（既に永続化済み）の内容は二重保存しない。
+        """
+        contents = [
+            c for c in state.episodic
+            if c and c not in state.persisted_episodic_contents
+        ]
+        if not contents:
+            return
+        embeddings: list[list[float] | None] = [None] * len(contents)
+        if self._embedding_service is not None:
+            try:
+                embeddings = list(
+                    await self._embedding_service.embed_batch(contents)
+                )
+            except Exception:
+                logger.warning(
+                    "embedding for canon episodic failed (%s), "
+                    "saving without embeddings", char_id,
+                )
+                embeddings = [None] * len(contents)
+
+        now = datetime.now(timezone.utc)
+        for content, embedding in zip(contents, embeddings):
+            memory = EpisodicMemory(
+                id=f"ep-{uuid.uuid4().hex[:12]}",
+                character_id=char_id,
+                content=content,
+                timestamp=now,
+                emotional_valence=max(-1.0, min(1.0, state.emotion.pleasure)),
+                importance=0.5,
+                conversation_id=self.session_id,
+                embedding=embedding,
+            )
+            await self._storage.save_episodic_memory(memory)
+
+    async def _persist_relations(
+        self, char_id: str, state: CharacterRuntimeState
+    ) -> None:
+        """このキャラの関係性を Relation として保存する（owner = char_id）."""
+        now = datetime.now(timezone.utc)
+        for target_id, rel in state.relations.items():
+            relation = Relation(
+                id=f"{char_id}->{target_id}",
+                owner_id=char_id,
+                target_id=target_id,
+                target_name=rel.get("target_name", target_id),
+                relationship_type="peer",
+                description="マルチエージェント会話で形成された関係",
+                closeness=float(rel.get("closeness", 0.5)),
+                trust=float(rel.get("trust", 0.5)),
+                updated_at=now,
+            )
+            await self._storage.save_relation(relation)
+
+    async def _rag_recall(
+        self, speaker: Character, state: CharacterRuntimeState
+    ) -> list[str]:
+        """発話前に、いま話している話題に関連する過去記憶を RAG 検索する.
+
+        invariant: memory-rag-recall — storage 指定時、想起記憶は episodic の
+        単純スライス（[-3:]）ではなく MemorySearchEngine の性格バイアス検索で
+        選ぶ。話題（直前の発話 + shared_context）の embedding でスコアリングし、
+        上位を返す。
+
+        storage / embedding が無い、または母集団が空ならフォールバックとして
+        従来どおり直近 episodic スライスを返す（既存挙動を保つ）。
+        """
+        pool = state.recalled_episodic_pool
+        if (
+            self._storage is None
+            or self._embedding_service is None
+            or not pool
+        ):
+            return list(state.episodic[-3:])
+
+        # 話題 = 直前の発話 + shared_context（speaker 視点の最新メッセージ）
+        view = self.conversation.history_as_messages(viewer_id=speaker.id)
+        query_text = self.shared_context
+        if view:
+            query_text = f"{view[-1].get('content', '')} {self.shared_context}".strip()
+
+        try:
+            query_embedding = await self._embedding_service.embed(query_text)
+            scored = self._memory_search.search(
+                memories=list(pool),
+                query_embedding=query_embedding,
+                personality=speaker.personality,
+                now=datetime.now(timezone.utc),
+            )
+        except Exception:
+            logger.warning(
+                "RAG recall failed for %s, falling back to slice", speaker.name,
+            )
+            return list(state.episodic[-3:])
+
+        # トピック関連性ゲート: 性格バイアス込みのスコアで順序は決めつつ、
+        # 「いま話している話題」と embedding がほぼ無関係な記憶（importance だけで
+        # 浮いてくる）は想起しない。話題駆動の想起であって、単なる重要記憶の
+        # 列挙ではないため (memory-rag-recall)。
+        relevant = [
+            m for m, _score in scored
+            if m.embedding is not None
+            and cosine_similarity(m.embedding, query_embedding)
+            >= _RAG_RELEVANCE_THRESHOLD
+        ]
+        recalled = [m.content for m in relevant[:_RAG_RECALL_LIMIT]]
+        return recalled or list(state.episodic[-3:])
 
     async def ensure_intents(self) -> dict[str, Intent]:
         """各キャラの思惑（短期ゴール）を生成して保持する（未生成時のみ）.
@@ -316,8 +545,13 @@ class MultiAgentSession:
         )
         state = self.character_states[speaker.id]
 
+        # 1.5. 正史 RAG 想起 (memory-rag-recall): いま話している話題に関連する
+        #      過去記憶を MemorySearchEngine で検索して発話プロンプトに注入する。
+        #      storage 未指定なら従来どおり episodic スライス。
+        recalled = await self._rag_recall(speaker, state)
+
         # 2. LLM 呼び出し → speech/action 生成
-        utterance = await self._generate_utterance(speaker, state)
+        utterance = await self._generate_utterance(speaker, state, recalled)
 
         # 3. Conversation history に積む
         self.conversation.record_utterance(utterance)
@@ -393,7 +627,7 @@ class MultiAgentSession:
             speaker=speaker,
             utterance=utterance,
             emotion_changes=emotion_changes,
-            recalled_memories=list(state.episodic[-3:]),
+            recalled_memories=list(recalled),
             llm_call_count=1 + len(self.conversation.participants),
         )
 
@@ -460,14 +694,17 @@ class MultiAgentSession:
         self,
         speaker: Character,
         state: CharacterRuntimeState,
+        recalled: list[str] | None = None,
     ) -> Utterance:
         """LLM を呼んで 1 ターンぶんの speech/thought/action を生成.
 
         invariants: intent-driven-utterance（思惑を注入）,
-        speech-thought-separation（thought を別フィールドで記録）。
+        speech-thought-separation（thought を別フィールドで記録）,
+        memory-rag-recall（recalled の想起記憶を発話プロンプトに注入）。
         Issue #22: fun_config に応じてクセ/テンポ/水平思考/構造的オチの
         プロンプトセクションを注入する（傾向の付与のみ。出力は LLM の自律）。
         """
+        recalled = recalled if recalled is not None else list(state.episodic[-3:])
         system_prompt = _SPEECH_SYSTEM_PROMPT.format(
             name=speaker.name,
             cast_roster=build_cast_roster_section(
@@ -486,7 +723,10 @@ class MultiAgentSession:
             arousal=round(state.emotion.arousal, 2),
             dominance=round(state.emotion.dominance, 2),
             context=self.shared_context or "（特になし）",
-            fun_sections=self._build_fun_sections(speaker),
+            fun_sections=(
+                self._build_recall_section(recalled)
+                + self._build_fun_sections(speaker)
+            ),
         )
 
         # speaker 視点で history を渡す
@@ -542,7 +782,7 @@ class MultiAgentSession:
             emotion_label=state.emotion.emotion_label,
             pad=(state.emotion.pleasure, state.emotion.arousal,
                  state.emotion.dominance),
-            recalled_memories=list(state.episodic[-3:]),
+            recalled_memories=list(recalled),
         )
 
     def _apply_emotion_dynamics(
@@ -571,6 +811,25 @@ class MultiAgentSession:
             dominance=pull(estimated.dominance, base[2]),
             emotion_label=estimated.emotion_label,
             situation=estimated.situation,
+        )
+
+    @staticmethod
+    def _build_recall_section(recalled: list[str]) -> str:
+        """RAG 想起した過去記憶を発話プロンプトに注入するセクション (Issue #31).
+
+        invariant: memory-rag-recall — 想起記憶を「いま思い出していること」として
+        プロンプトに載せる。中身（どう活かすか）は LLM の自律に委ね、台本化しない。
+        想起が空なら何も足さない（既存挙動を保つ）。
+        """
+        items = [m for m in recalled if m]
+        if not items:
+            return ""
+        lines = "\n".join(f"- {m}" for m in items)
+        return (
+            "\n## ふと思い出したこと（過去の記憶）\n"
+            "今の話題に関連して、こんな出来事を思い出している:\n"
+            f"{lines}\n"
+            "- 自然な範囲で、思い出したことを会話に滲ませてよい（無理に触れなくてよい）。\n"
         )
 
     def _build_fun_sections(self, speaker: Character) -> str:

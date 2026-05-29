@@ -15,7 +15,13 @@ invariants:
   - id: session-end-on-time-limit
     text: "セッションは設定時間に達したら自動終了し、SessionEndPipeline（multi-agent）で記憶・関係性を統合更新する。"
   - id: session-end-state-persisted
-    text: "セッション終了時、キャラの最終状態（PAD・関係性・新規記憶）は Firestore に永続化され、次回セッションで引き継がれる。"
+    text: |
+      セッション終了時、キャラの最終状態（PAD・関係性・新規記憶）は storage に永続化され、
+      次回セッションで引き継がれる。multi-agent の canon-continuity（persist_canon /
+      load_canon）として実装され、永続化はキャラ ID 単位（正史は 1 本）。storage backend は
+      抽象（StorageBackend）で、ローカルは SQLite、本番は Firestore 等を差し替え可能。
+    source_ref: src/pneuma_core/multi_agent/session.py:persist_canon
+    test: tests/multi_agent/test_canon_continuity.py
   - id: broadcast-circuit-breaker
     text: "1 セッション当たりの LLM 呼び出し・TTS リクエスト・実行時間が閾値を超えた場合、自動で配信プロセスを kill する（コスト暴走防止）。"
     rationale: |

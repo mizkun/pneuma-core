@@ -16,7 +16,6 @@ from datetime import datetime, timezone
 import pytest
 
 from pneuma_core.models.character import Character
-from pneuma_core.models.emotion import EmotionalState
 from pneuma_core.models.memory import EpisodicMemory
 from pneuma_core.models.personality import Personality
 from pneuma_core.models.values import Values

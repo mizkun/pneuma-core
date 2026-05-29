@@ -68,6 +68,7 @@ class SessionDriver:
         inter_turn_seconds: float = 2.5,
         inter_session_seconds: float = 8.0,
         fun_config: FunEngineConfig | None = None,
+        persist_path: str | None = None,
     ) -> None:
         self._llm = llm
         self._llm_label = llm_label
@@ -77,6 +78,12 @@ class SessionDriver:
         self._inter_turn_seconds = inter_turn_seconds
         self._inter_session_seconds = inter_session_seconds
         self._fun_config = fun_config or FunEngineConfig()
+        # 正史の連続性 (Issue #31): --persist 指定時、storage を別スレッドの
+        # asyncio loop 内で初期化する。各セッションが load_canon → 会話 →
+        # persist_canon で 1 本の正史を積み上げる。
+        self._persist_path = persist_path
+        self._storage: Any = None
+        self._embedding: Any = None
 
         self._subscribers: list[queue.Queue] = []
         self._lock = threading.Lock()
@@ -177,6 +184,8 @@ class SessionDriver:
         asyncio.run(self._async_loop())
 
     async def _async_loop(self) -> None:
+        # 正史の連続性 (Issue #31): storage はこのスレッドの event loop 内で初期化。
+        await self._init_persistence()
         session_count = 0
         while not self._stop_event.is_set():
             session_count += 1
@@ -189,6 +198,24 @@ class SessionDriver:
                 "session_count": session_count,
             })
             await asyncio.sleep(self._inter_session_seconds)
+
+    async def _init_persistence(self) -> None:
+        """--persist 指定時、SQLite storage + embedding を初期化する (Issue #31)."""
+        if not self._persist_path:
+            return
+        from pneuma_core.storage.sqlite import SQLiteStorageBackend
+
+        storage = SQLiteStorageBackend(self._persist_path)
+        await storage.initialize()
+        sheets = load_yurucamp_sheets()
+        for s in sheets:
+            await storage.save_character(s.character)
+        self._storage = storage
+
+        if os.environ.get("OPENAI_API_KEY"):
+            from pneuma_core.llm.embedding import OpenAIEmbeddingService
+
+            self._embedding = OpenAIEmbeddingService.from_env()
 
     async def _run_one_session(self, idx: int) -> None:
         sheets = load_yurucamp_sheets()
@@ -205,12 +232,17 @@ class SessionDriver:
             shared_context=self._context,
             circuit_breaker=cb,
             fun_config=self._fun_config,
+            storage=self._storage,
+            embedding_service=self._embedding,
         )
         self._current_session = session
-        # apply initial emotions from sheets
+        # apply initial emotions from sheets（正史が無い初回のみ）
         for s in sheets:
             if s.initial_state is not None:
                 session.character_states[s.character.id].emotion = s.initial_state
+        # 正史の連続性 (Issue #31): 前回までの状態をロード（storage 未指定なら no-op）。
+        # ロード後の emotion がシートの初期値を上書きする（前回から引き継ぐ）。
+        await session.load_canon()
 
         self._broadcast("session_start", {
             "session_id": session.session_id,
@@ -254,6 +286,10 @@ class SessionDriver:
                 "total_episodic": end_result.total_episodic,
                 "total_semantic": end_result.total_semantic,
             })
+            # 正史を前に進める (Issue #31): SessionEnd で積まれた記憶・最終感情・
+            # 関係を storage に永続化。次セッションの load_canon が読み戻す
+            # （storage 未指定なら no-op）。
+            await session.persist_canon()
             self._latest_snapshot = session.snapshot()
             self._broadcast("snapshot", self._latest_snapshot)
         except Exception as e:
@@ -831,6 +867,9 @@ def main() -> None:
                         help="Seconds between turns (default: 2.5)")
     parser.add_argument("--inter-session", type=float, default=8.0,
                         help="Seconds between sessions (default: 8.0)")
+    parser.add_argument("--persist", type=str, default=None, metavar="DB_PATH",
+                        help="正史の連続性 (Issue #31): SQLite パスを指定すると各セッションの"
+                             "記憶/感情/関係を永続化し、セッション間で引き継ぐ（正史が積み上がる）")
     # 面白さエンジンのトグル (Issue #22) — text_runner と同じ
     parser.add_argument("--no-intent", action="store_true",
                         help="思惑（#20）を無効化する（デフォルトは有効）")
@@ -869,6 +908,7 @@ def main() -> None:
         inter_turn_seconds=args.inter_turn,
         inter_session_seconds=args.inter_session,
         fun_config=fun_config,
+        persist_path=args.persist,
     )
 
     print("=" * 60)
