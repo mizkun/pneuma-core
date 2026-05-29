@@ -176,6 +176,22 @@ class MultiAgentSessionEndPipeline:
                 if content:
                     state.episodic.append(content)
 
+            # speaker-episodic-guaranteed (Issue #23 バグ2):
+            # 発話したキャラ（speak_count>0）は、このセッションに参加した
+            # 「観測対象」なので episodic を最低 1 件残す。LLM 分析が空 episodic を
+            # 返した場合（全要素 ON 時の生成負荷でスキップされる等）でも、直近の
+            # 会話からフォールバック episodic を 1 件補う。発話していないキャラには
+            # 強制しない（過剰生成を避ける）。
+            if state.speak_count > 0 and not state.episodic:
+                fallback = self._fallback_episodic(ch.name, view)
+                state.episodic.append(fallback["content"])
+                ep_list = [*ep_list, fallback]
+                logger.info(
+                    "speaker-episodic-guaranteed: %s の episodic が空だったため"
+                    "フォールバックを 1 件補完",
+                    ch.name,
+                )
+
             per_results.append(CharacterEndResult(
                 character_id=ch.id,
                 character_name=ch.name,
@@ -228,6 +244,33 @@ class MultiAgentSessionEndPipeline:
             )
         )
         return self._parse_json(response.content)
+
+    @staticmethod
+    def _fallback_episodic(name: str, view: list[dict]) -> dict:
+        """LLM 分析が空のときに補う最小限の episodic を 1 件作る (Issue #23 バグ2).
+
+        直近の会話の自分視点メッセージ（role=assistant = 自分の発話）から
+        要点を拾い、無ければ汎用の参加記録を返す。
+
+        invariant: speaker-episodic-guaranteed。
+        """
+        own_lines = [
+            (m.get("content") or "").strip()
+            for m in view
+            if m.get("role") == "assistant" and (m.get("content") or "").strip()
+        ]
+        if own_lines:
+            snippet = own_lines[-1]
+            if len(snippet) > 60:
+                snippet = snippet[:60] + "…"
+            content = f"このセッションで「{snippet}」などと話して会話に参加した"
+        else:
+            content = "このセッションで野クルのみんなと一緒に過ごした"
+        return {
+            "content": content,
+            "emotional_valence": 0.3,
+            "importance": 0.3,
+        }
 
     def _supports_tool_use(self) -> bool:
         """Adapter が structured_completion を正式実装しているか判定."""

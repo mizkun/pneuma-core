@@ -84,6 +84,33 @@ invariants:
       決まるか）は台本化せず LLM の自律に委ねる。
     source_ref: src/pneuma_core/multi_agent/session.py:_is_endgame
     test: tests/multi_agent/test_fun_config.py
+  - id: pad-text-consistency
+    text: |
+      確定した内心（PAD/emotion_label）と、生成されたテキスト（thought = 裏の本音）の
+      感情方向が正反対にならない。生成順序を「PAD/emotion を確定 → その PAD/label を
+      speech/thought 生成プロンプトに注入 → 生成 → thought の感情方向と emotion_label が
+      正反対なら label を thought 側に合わせて補正」で固定する。構造的オチ（終盤収束）も
+      emotion を強制上書きしない（speech/thought の収束だけ促し、emotion はこの整合を通す）。
+      内心が見える作品では計器（emotion_label）とテキストの矛盾が観測の信頼を壊すため。
+    source_ref: src/pneuma_core/multi_agent/emotion_text_consistency.py:resolve_emotion_text_consistency
+    test: tests/multi_agent/test_emotion_text_consistency.py
+  - id: speaker-episodic-guaranteed
+    text: |
+      MultiAgentSession のセッション終了時、発話したキャラ（speak_count>0）は episodic を
+      最低 1 件持つことを保証する。LLM 分析が空 episodic を返した場合（全要素 ON 時の生成
+      負荷でスキップされる等）でも、直近の会話からフォールバック episodic を 1 件補完する。
+      発話していないキャラには強制しない（過剰生成を避ける）。観測対象として参加した
+      キャラの記憶が空になる取りこぼしを防ぐ。
+    source_ref: src/pneuma_core/multi_agent/session_end.py:MultiAgentSessionEndPipeline
+    test: tests/multi_agent/test_episodic_guarantee.py
+  - id: cast-naming-fixed
+    text: |
+      このセッションに実在するキャストの本名と呼称（他キャラからの呼び方）だけを発話
+      プロンプト先頭の固定表で明示し、それ以外の名前（他作品・旧デモのキャラ名「リン」
+      「アイネ」等）を会話・mock 応答に出さない。キャスト呼称表を build_cast_roster_section
+      で生成して system_prompt に注入し、生成時の逸脱を防ぐ。
+    source_ref: src/pneuma_core/multi_agent/session.py:build_cast_roster_section
+    test: tests/multi_agent/test_cast_naming.py
 source_files:
   - src/pneuma_core/
 depends_on:

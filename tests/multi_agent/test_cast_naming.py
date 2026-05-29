@@ -8,8 +8,6 @@ AC-3: 3 キャラの呼称が固定され「リン」等のブレが起きない
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from pneuma_core.models.character import Character

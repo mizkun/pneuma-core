@@ -28,6 +28,9 @@ from pneuma_core.multi_agent.floor_controller import (
     FloorController,
     Utterance,
 )
+from pneuma_core.multi_agent.emotion_text_consistency import (
+    resolve_emotion_text_consistency,
+)
 from pneuma_core.multi_agent.fun_config import FunEngineConfig
 from pneuma_core.multi_agent.intent import Intent, IntentGenerator
 from pneuma_core.runtime.emotion_engine import EmotionEngine, pad_to_label
@@ -70,7 +73,7 @@ class TurnResult:
 # {fun_sections} に FunEngineConfig 由来のセクションが入る。
 _SPEECH_SYSTEM_PROMPT = """\
 あなたは「{name}」というキャラクターです。
-
+{cast_roster}
 ## プロフィール
 {profile}
 
@@ -163,6 +166,43 @@ _ENDGAME_REMAINING_RATIO = 0.5
 # 引き戻す重み（0=引き戻さない 〜 1=baseline そのもの）。
 # 0.5 で「他者につられた高止まり」を半分、自分の性格起点に引き戻す。
 _EMOTION_BASELINE_PULL = 0.5
+
+
+# キャスト呼称表 (Issue #23 バグ3, cast-naming-fixed)。
+# 本名 → このキャラを他キャラが呼ぶときの愛称・呼び方。発話プロンプト先頭に
+# 固定表として明示し、旧デモの名前（「リン」等）への逸脱を防ぐ。
+# ここに無いキャラ（テスト用など）は本名のみを呼称として載せる。
+_CAST_NICKNAMES: dict[str, list[str]] = {
+    "なでしこ": ["なでしこ"],
+    "千明": ["ちかちゃん", "千明"],
+    "あおい": ["あおいちゃん", "あおい"],
+}
+
+
+def build_cast_roster_section(participants: list[Character]) -> str:
+    """発話プロンプトに載せるキャスト呼称表を組み立てる (Issue #23 バグ3).
+
+    invariant: cast-naming-fixed — このセッションに実在するキャストの本名と
+    呼び方だけを明示し、それ以外の名前（旧デモ「リン」「アイネ」等）を会話に
+    出さないよう固定する。
+
+    Args:
+        participants: このセッションの参加キャラクター。
+
+    Returns:
+        プロンプトに差し込むキャスト表テキスト（末尾改行付き）。
+    """
+    lines = ["", "## このセッションの登場人物（この名前以外は使わない）"]
+    for ch in participants:
+        nicks = _CAST_NICKNAMES.get(ch.name, [ch.name])
+        # 本名は必ず含める（重複は除く）
+        names = list(dict.fromkeys([ch.name, *nicks]))
+        call = " / ".join(names)
+        lines.append(f"- {ch.name}（呼び方: {call}）")
+    lines.append(
+        "- 上記にいない名前（他作品・旧デモのキャラ名など）は絶対に使わないこと。"
+    )
+    return "\n".join(lines) + "\n"
 
 
 class MultiAgentSession:
@@ -358,6 +398,9 @@ class MultiAgentSession:
         """
         system_prompt = _SPEECH_SYSTEM_PROMPT.format(
             name=speaker.name,
+            cast_roster=build_cast_roster_section(
+                self.conversation.participants
+            ),
             profile=speaker.profile or "",
             speaking_style=speaker.speaking_style or "自由な口調",
             openness=speaker.personality.openness,
@@ -413,13 +456,28 @@ class MultiAgentSession:
         # speech-thought-separation: 内心を runtime state に保持（観測用）
         state.last_thought = thought
 
+        # pad-text-consistency (Issue #23 バグ1): 確定済み emotion_label と、
+        # 生成された thought（内心）の感情方向が正反対なら label を thought 側に
+        # 合わせる。生成順序は「PAD/emotion 確定 → プロンプト注入 → 生成 → 整合」で
+        # 固定する。structured_ending（終盤収束）も感情を強制上書きしない
+        # （speech/thought だけ収束を促し、emotion はこの整合を通る）。
+        emotion_label, label_changed = resolve_emotion_text_consistency(
+            state.emotion.emotion_label, thought
+        )
+        if label_changed:
+            logger.info(
+                "pad-text-consistency: %s の emotion_label を %r→%r に補正"
+                "（thought と整合）",
+                speaker.name, state.emotion.emotion_label, emotion_label,
+            )
+
         return Utterance(
             speaker_id=speaker.id,
             speaker_name=speaker.name,
             speech=speech,
             action=action,
             thought=thought,
-            emotion_label=state.emotion.emotion_label,
+            emotion_label=emotion_label,
             pad=(state.emotion.pleasure, state.emotion.arousal,
                  state.emotion.dominance),
             recalled_memories=list(state.episodic[-3:]),
