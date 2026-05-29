@@ -280,12 +280,16 @@ class MultiAgentSession:
         """
         if not self.fun_config.enable_intent:
             return self.intents
+        # cast-naming-fixed: 思惑テキスト（特に hidden_goal）に旧デモ名「リン」等が
+        # 混入するのを防ぐため、発話プロンプトと同じキャスト名簿を思惑生成にも渡す。
+        cast_roster = build_cast_roster_section(self.conversation.participants)
         for ch in self.conversation.participants:
             if ch.id in self.intents:
                 continue
             self.intents[ch.id] = await self._intent_generator.generate(
                 character=ch,
                 shared_context=self.shared_context,
+                cast_roster=cast_roster,
             )
         return self.intents
 

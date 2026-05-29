@@ -160,3 +160,62 @@ async def test_generated_speech_has_no_forbidden_names() -> None:
         assert _has_forbidden(u.thought or "") is None, (
             f"生成 thought に禁止名: {u.thought!r}"
         )
+
+
+# ─────────────── 思惑(intent)生成にもキャスト名簿 ───────────────
+# 実機 trial4-fix2 で思惑(裏)に「リンちゃん」が混入した回帰。発話だけでなく
+# 思惑生成プロンプトにもキャスト名簿を注入することを保証する (cast-naming-fixed)。
+
+
+@pytest.mark.asyncio
+async def test_intent_prompt_includes_cast_roster() -> None:
+    """AC-3: ensure_intents の思惑生成 system_prompt にキャスト名簿が注入される.
+
+    思惑生成は Tool Use(structured_completion)経由なので、そちらを捕捉する。
+    """
+    captured: list[str] = []
+
+    class _Capturing(MockLLMAdapter):
+        async def structured_completion(self, **kwargs):  # type: ignore[override]
+            sp = kwargs.get("system_prompt", "")
+            if sp:
+                captured.append(sp)
+            return await super().structured_completion(**kwargs)
+
+    chars = [
+        _make_char("a", "なでしこ", 0.95),
+        _make_char("b", "千明", 0.7),
+        _make_char("c", "あおい", 0.5),
+    ]
+    conv = Conversation(participants=chars)
+    session = MultiAgentSession(conversation=conv, llm=_Capturing(seed=1))
+    await session.ensure_intents()
+
+    # 思惑生成のプロンプトが少なくとも1つ捕捉され、全てに名簿が載る
+    intent_prompts = [p for p in captured if "短期ゴール" in p or "思惑" in p]
+    assert intent_prompts, "思惑生成プロンプトが捕捉できなかった"
+    for prompt in intent_prompts:
+        for name in _CAST:
+            assert name in prompt, f"思惑プロンプトにキャスト名簿なし: {name}"
+        assert _has_forbidden(prompt) is None
+
+
+@pytest.mark.asyncio
+async def test_generated_intents_have_no_forbidden_names() -> None:
+    """AC-3: 生成された思惑(表/裏)テキストに禁止名が出ない."""
+    chars = [
+        _make_char("a", "なでしこ", 0.95),
+        _make_char("b", "千明", 0.7),
+        _make_char("c", "あおい", 0.5),
+    ]
+    conv = Conversation(participants=chars)
+    session = MultiAgentSession(conversation=conv, llm=MockLLMAdapter(seed=3))
+    intents = await session.ensure_intents()
+    for intent in intents.values():
+        assert _has_forbidden(intent.surface_goal) is None, (
+            f"思惑(表)に禁止名: {intent.surface_goal!r}"
+        )
+        if intent.hidden_goal:
+            assert _has_forbidden(intent.hidden_goal) is None, (
+                f"思惑(裏)に禁止名: {intent.hidden_goal!r}"
+            )

@@ -139,7 +139,7 @@ _SYSTEM_PROMPT_BASE = """\
 
 ## 今の状況
 {situation}
-
+{cast_roster}
 ## 指示
 - 長期欲求と価値観から、この状況で自然に生まれる『短期ゴール（思惑）』を 1 つ作る。
 - 思惑は内発的なものにする。視聴者を意識した「面白くしよう」は禁止。
@@ -233,13 +233,21 @@ class IntentGenerator:
         self,
         character: Character,
         shared_context: str,
+        cast_roster: str = "",
     ) -> Intent:
         """1 キャラぶんの Intent を生成する.
 
         invariants: intent-driven-utterance, intent-emergent-not-scripted,
-            structured-output-via-tool-use, llm-response-validated-strict
+            structured-output-via-tool-use, llm-response-validated-strict,
+            cast-naming-fixed（cast_roster で登場人物名を固定し、旧デモ名の混入を防ぐ）
+
+        Args:
+            cast_roster: build_cast_roster_section() が作るキャスト名簿。思惑の
+                テキスト（特に hidden_goal）に旧デモ名「リン」等が混入するのを防ぐ。
         """
-        system_prompt = self._build_system_prompt(character, shared_context)
+        system_prompt = self._build_system_prompt(
+            character, shared_context, cast_roster
+        )
         validator = ResponseValidator(IntentEvaluation)
         retry = RetryableLLMCall(max_retries=self._max_retries, initial_delay=0.0)
 
@@ -280,7 +288,7 @@ class IntentGenerator:
         )
 
     def _build_system_prompt(
-        self, character: Character, shared_context: str
+        self, character: Character, shared_context: str, cast_roster: str = ""
     ) -> str:
         p = character.personality
         v = character.values
@@ -298,6 +306,7 @@ class IntentGenerator:
             conservation=v.conservation,
             desires=_character_desires(character),
             situation=shared_context or "（特になし）",
+            cast_roster=cast_roster,
         )
 
     def _make_tool_use_call(
