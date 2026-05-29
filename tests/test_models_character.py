@@ -199,6 +199,8 @@ class TestCharacter:
         assert char.background is None
         assert char.personality_description is None
         assert char.values_description is None
+        # Issue #22: quirk（思考のクセ）はデフォルト空文字
+        assert char.quirk == ""
 
     def test_character_with_descriptions(self):
         """自由記述フィールドを設定できる."""

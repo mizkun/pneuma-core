@@ -315,6 +315,24 @@ class TestSerialization:
         assert sheet2.initial_state.pleasure == sheet1.initial_state.pleasure
         assert sheet2.initial_state.emotion_label == sheet1.initial_state.emotion_label
 
+    def test_load_quirk(self) -> None:
+        """Issue #22: quirk（思考のクセ）フィールドが読み込まれる."""
+        yaml_str = VALID_YAML + "\nquirk: 何でも勝負に変換して考える\n"
+        sheet = CharacterSheet.from_yaml(yaml_str)
+        assert sheet.character.quirk == "何でも勝負に変換して考える"
+
+    def test_quirk_defaults_empty_when_absent(self) -> None:
+        """Issue #22: quirk 未記載のときは空文字（既存 YAML を壊さない）."""
+        sheet = CharacterSheet.from_yaml(VALID_YAML)
+        assert sheet.character.quirk == ""
+
+    def test_round_trip_quirk(self) -> None:
+        """Issue #22: round-trip で quirk が保持される."""
+        yaml_str = VALID_YAML + "\nquirk: 何でも食べ物に結びつける\n"
+        sheet1 = CharacterSheet.from_yaml(yaml_str)
+        sheet2 = CharacterSheet.from_yaml(sheet1.to_yaml())
+        assert sheet2.character.quirk == "何でも食べ物に結びつける"
+
     def test_save_to_file(self, tmp_path: Path) -> None:
         """ファイルへの書き出し."""
         sheet = CharacterSheet.from_yaml(VALID_YAML)
