@@ -227,3 +227,121 @@ async def test_structured_ending_does_not_force_overwrite_emotion() -> None:
     t_dir = thought_emotion_direction(u.thought)
     l_dir = label_emotion_direction(u.emotion_label)
     assert not (t_dir * l_dir < 0)
+
+
+class _ContradictoryStateMock(MockLLMAdapter):
+    """発話の thought は強い負、推定 emotion は正(happy) という矛盾を仕込む.
+
+    観測される計器（state.emotion / snapshot）まで整合補正が届くかを検証する
+    ための共通 mock。
+    """
+
+    def _gen_chat(self, request):  # type: ignore[override]
+        import json
+        return json.dumps(
+            {
+                "speech": "そうだね",
+                "thought": "最悪だ……すごく悲しいし悔しい、怖い",
+                "action": "うつむく",
+            },
+            ensure_ascii=False,
+        )
+
+    def _gen_emotion(self, request):  # type: ignore[override]
+        import json
+        return json.dumps(
+            {
+                "pleasure": 0.6,
+                "arousal": 0.6,
+                "dominance": 0.2,
+                "emotion_label": "happy",
+                "situation": "雑談中",
+            },
+            ensure_ascii=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_turn_corrects_speaker_state_emotion() -> None:
+    """🔴 致命: 整合補正が観測される計器 state.emotion に届く.
+
+    AC-1 (pad-text-consistency): 再推定後に確定する speaker の state.emotion
+    .emotion_label が、その thought（負方向）と正反対(happy)のままにならない。
+    CLI 主表示 / Web バッジは state.emotion を読むため、ここが補正されないと
+    視聴者に矛盾が見える。
+    """
+    chars = [_make_char("a", "なでしこ", 0.9), _make_char("b", "千明", 0.5)]
+    conv = Conversation(participants=chars)
+    session = MultiAgentSession(
+        conversation=conv,
+        llm=_ContradictoryStateMock(seed=1),
+    )
+    result = await session.run_turn()
+    assert result is not None
+
+    speaker_state = session.character_states[result.speaker.id]
+    t_dir = thought_emotion_direction(speaker_state.last_thought)
+    l_dir = label_emotion_direction(speaker_state.emotion.emotion_label)
+    assert t_dir < 0  # 前提: thought は負方向
+    # 観測される計器(state.emotion)が thought と正反対になっていないこと
+    assert not (t_dir * l_dir < 0), (
+        f"state.emotion.emotion_label={speaker_state.emotion.emotion_label!r} が "
+        f"thought={speaker_state.last_thought!r} と正反対"
+    )
+
+
+@pytest.mark.asyncio
+async def test_snapshot_emotion_matches_history_tail() -> None:
+    """🟠 重要: snapshot の characters[].emotion と history_tail[] が一致.
+
+    AC-1 (pad-text-consistency): 最新発話者の snapshot characters[].emotion
+    .emotion_label（state.emotion 由来）と、対応する history_tail[].emotion_label
+    （Utterance 由来）が食い違わない（同じ補正後ラベル）。
+    """
+    chars = [_make_char("a", "なでしこ", 0.9), _make_char("b", "千明", 0.5)]
+    conv = Conversation(participants=chars)
+    session = MultiAgentSession(
+        conversation=conv,
+        llm=_ContradictoryStateMock(seed=1),
+    )
+    result = await session.run_turn()
+    assert result is not None
+
+    snap = session.snapshot()
+    # 最新発話者を history_tail の末尾から取る
+    last_hist = snap["history_tail"][-1]
+    speaker_id = last_hist["speaker_id"]
+    char_emo = next(
+        c["emotion"]["emotion_label"]
+        for c in snap["characters"]
+        if c["id"] == speaker_id
+    )
+    assert char_emo == last_hist["emotion_label"], (
+        f"snapshot characters[].emotion={char_emo!r} != "
+        f"history_tail[].emotion_label={last_hist['emotion_label']!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_turn_utterance_matches_state_emotion() -> None:
+    """🔴 致命: Utterance.emotion_label と state.emotion.emotion_label が一致.
+
+    AC-1 (pad-text-consistency): 補正後の最終ラベルが Utterance と state の
+    両方で同一であること（CLI/Web/snapshot/Utterance がすべて同じ値）。
+    """
+    chars = [_make_char("a", "なでしこ", 0.9), _make_char("b", "千明", 0.5)]
+    conv = Conversation(participants=chars)
+    session = MultiAgentSession(
+        conversation=conv,
+        llm=_ContradictoryStateMock(seed=1),
+    )
+    result = await session.run_turn()
+    assert result is not None
+
+    speaker_state = session.character_states[result.speaker.id]
+    assert (
+        result.utterance.emotion_label == speaker_state.emotion.emotion_label
+    ), (
+        f"Utterance.emotion_label={result.utterance.emotion_label!r} != "
+        f"state.emotion.emotion_label={speaker_state.emotion.emotion_label!r}"
+    )

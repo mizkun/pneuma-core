@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -375,6 +375,15 @@ class MultiAgentSession:
                     "emotion estimation failed for %s: %s", ch.name, e
                 )
 
+        # 5. pad-text-consistency (Issue #23 バグ1): 整合は「再推定で確定した
+        #    state.emotion」に対して、その時点の thought（生成済み）と照合して
+        #    かける。観測される計器（CLI 主表示 / Web バッジ / snapshot の
+        #    characters[].emotion）はすべて speaker の state.emotion を読むため、
+        #    Utterance だけ補正しても計器に届かない。最終ラベルを state.emotion・
+        #    Utterance・emotion_changes すべてに書き戻して一致させる。
+        utterance = self._reconcile_speaker_emotion(speaker, state, utterance)
+        emotion_changes[speaker.id] = state.emotion
+
         return TurnResult(
             turn_index=self._turn_index,
             speaker=speaker,
@@ -383,6 +392,65 @@ class MultiAgentSession:
             recalled_memories=list(state.episodic[-3:]),
             llm_call_count=1 + len(self.conversation.participants),
         )
+
+    def _reconcile_speaker_emotion(
+        self,
+        speaker: Character,
+        state: CharacterRuntimeState,
+        utterance: Utterance,
+    ) -> Utterance:
+        """確定した speaker の state.emotion と thought の整合をとる (バグ1).
+
+        invariant: pad-text-consistency — 再推定で確定した emotion_label と、
+        そのターンの thought（裏の本音）の感情方向が正反対にならない。矛盾
+        したら label を thought 側に補正し、観測される全計器を一致させる:
+          - state.emotion.emotion_label（CLI 主表示 / Web バッジ / snapshot）
+          - 直近 history の Utterance.emotion_label（history_tail）
+          - 返り値 Utterance（TurnResult / emotion_changes）
+
+        EmotionalState / Utterance は frozen なので dataclasses.replace で再構築
+        する。整合は「再推定の後」に乗せる（再推定そのものは消さない）。
+        """
+        corrected_label, label_changed = resolve_emotion_text_consistency(
+            state.emotion.emotion_label, state.last_thought
+        )
+        if not label_changed:
+            # 補正なしでも Utterance のラベルを確定後 state.emotion に揃える
+            # （_generate_utterance は生成時点の state.emotion を載せており、
+            #  その後の再推定でラベルが変わっているため）。
+            corrected_label = state.emotion.emotion_label
+
+        if state.emotion.emotion_label != corrected_label:
+            logger.info(
+                "pad-text-consistency: %s の state.emotion を %r→%r に補正"
+                "（thought と整合）",
+                speaker.name, state.emotion.emotion_label, corrected_label,
+            )
+        state.emotion = replace(state.emotion, emotion_label=corrected_label)
+
+        # pad_history の最新エントリ（このターンぶん）も補正後ラベルに揃える
+        if state.pad_history:
+            p, a, d, _ = state.pad_history[-1]
+            state.pad_history[-1] = (p, a, d, corrected_label)
+
+        # Utterance（frozen）を確定後の emotion（label + PAD）で作り直す。
+        # PAD も再推定後の state.emotion に揃え、Utterance 内で label と PAD が
+        # 食い違わないようにする。history の末尾も差し替える。
+        reconciled = replace(
+            utterance,
+            emotion_label=corrected_label,
+            pad=(
+                state.emotion.pleasure,
+                state.emotion.arousal,
+                state.emotion.dominance,
+            ),
+        )
+        if (
+            self.conversation.history
+            and self.conversation.history[-1] is utterance
+        ):
+            self.conversation.history[-1] = reconciled
+        return reconciled
 
     async def _generate_utterance(
         self,
@@ -456,28 +524,18 @@ class MultiAgentSession:
         # speech-thought-separation: 内心を runtime state に保持（観測用）
         state.last_thought = thought
 
-        # pad-text-consistency (Issue #23 バグ1): 確定済み emotion_label と、
-        # 生成された thought（内心）の感情方向が正反対なら label を thought 側に
-        # 合わせる。生成順序は「PAD/emotion 確定 → プロンプト注入 → 生成 → 整合」で
-        # 固定する。structured_ending（終盤収束）も感情を強制上書きしない
-        # （speech/thought だけ収束を促し、emotion はこの整合を通る）。
-        emotion_label, label_changed = resolve_emotion_text_consistency(
-            state.emotion.emotion_label, thought
-        )
-        if label_changed:
-            logger.info(
-                "pad-text-consistency: %s の emotion_label を %r→%r に補正"
-                "（thought と整合）",
-                speaker.name, state.emotion.emotion_label, emotion_label,
-            )
-
+        # pad-text-consistency (Issue #23 バグ1): ここでは生成時点の state.emotion
+        # ラベルを載せるだけにとどめる。整合（thought との照合と補正）は run_turn
+        # の感情再推定の「後」に _reconcile_speaker_emotion でかける。再推定で
+        # state.emotion のラベルが変わるため、このターンの thought はその確定後の
+        # ラベルと照合しないと観測される計器（state.emotion）に届かないため。
         return Utterance(
             speaker_id=speaker.id,
             speaker_name=speaker.name,
             speech=speech,
             action=action,
             thought=thought,
-            emotion_label=emotion_label,
+            emotion_label=state.emotion.emotion_label,
             pad=(state.emotion.pleasure, state.emotion.arousal,
                  state.emotion.dominance),
             recalled_memories=list(state.episodic[-3:]),

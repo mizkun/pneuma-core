@@ -86,11 +86,14 @@ invariants:
     test: tests/multi_agent/test_fun_config.py
   - id: pad-text-consistency
     text: |
-      確定した内心（PAD/emotion_label）と、生成されたテキスト（thought = 裏の本音）の
-      感情方向が正反対にならない。生成順序を「PAD/emotion を確定 → その PAD/label を
-      speech/thought 生成プロンプトに注入 → 生成 → thought の感情方向と emotion_label が
-      正反対なら label を thought 側に合わせて補正」で固定する。構造的オチ（終盤収束）も
-      emotion を強制上書きしない（speech/thought の収束だけ促し、emotion はこの整合を通す）。
+      観測される確定 emotion_label（state.emotion）と、そのターンの thought（裏の本音）の
+      感情方向が正反対にならない。1 ターンの順序は「前ターンの emotion を注入して speech/
+      thought を生成 → そのターンの感情を再推定して state.emotion を確定 → 確定した
+      state.emotion と生成済み thought を照合し、正反対なら label を thought 側に補正」。
+      補正後の emotion_label は state.emotion・Utterance・emotion_changes・pad_history・
+      snapshot のすべてに書き戻し、観測される全計器（CLI 主表示 / Web バッジ / snapshot の
+      characters[].emotion / history_tail[].emotion_label）が一致する。構造的オチ（終盤
+      収束）は emotion を強制上書きしない（speech/thought の収束だけ促す）。
       内心が見える作品では計器（emotion_label）とテキストの矛盾が観測の信頼を壊すため。
     source_ref: src/pneuma_core/multi_agent/emotion_text_consistency.py:resolve_emotion_text_consistency
     test: tests/multi_agent/test_emotion_text_consistency.py
