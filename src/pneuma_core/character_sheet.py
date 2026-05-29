@@ -178,6 +178,7 @@ class CharacterSheet:
             personality_description=data.get("personality_description"),
             values_description=data.get("values_description"),
             desires=data.get("desires"),
+            quirk=data.get("quirk") or "",
         )
 
         initial_state = None
@@ -220,6 +221,10 @@ class CharacterSheet:
             val = getattr(c, field)
             if val is not None:
                 data[field] = val
+
+        # quirk（思考のクセ, Issue #22）。デフォルト "" は書き出さない。
+        if c.quirk:
+            data["quirk"] = c.quirk
 
         # Personality
         p = c.personality

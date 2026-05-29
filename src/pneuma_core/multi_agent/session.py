@@ -17,19 +17,18 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from pneuma_core.emotion.baseline import personality_to_pad_baseline
 from pneuma_core.llm.adapter import LLMAdapter, LLMRequest
 from pneuma_core.models.character import Character
-from pneuma_core.models.emotion import EmotionalState, EmotionLabel
+from pneuma_core.models.emotion import EmotionalState
 from pneuma_core.models.message import StructuredResponse
-from pneuma_core.multi_agent.circuit_breaker import (
-    CircuitBreaker,
-    CircuitState,
-)
+from pneuma_core.multi_agent.circuit_breaker import CircuitBreaker
 from pneuma_core.multi_agent.conversation import Conversation
 from pneuma_core.multi_agent.floor_controller import (
     FloorController,
     Utterance,
 )
+from pneuma_core.multi_agent.fun_config import FunEngineConfig
 from pneuma_core.multi_agent.intent import Intent, IntentGenerator
 from pneuma_core.runtime.emotion_engine import EmotionEngine, pad_to_label
 from pneuma_core.runtime.response_parser import parse_structured_response
@@ -67,6 +66,8 @@ class TurnResult:
     tokens_used: int = 0
 
 
+# ベースの発話プロンプト（思惑・各創発要素のセクションは下で動的に挿入する）。
+# {fun_sections} に FunEngineConfig 由来のセクションが入る。
 _SPEECH_SYSTEM_PROMPT = """\
 あなたは「{name}」というキャラクターです。
 
@@ -93,26 +94,75 @@ _SPEECH_SYSTEM_PROMPT = """\
 
 ## 共有コンテクスト
 {context}
-
-## あなたの今の思惑（短期ゴール）
-表のゴール: {surface_goal}
-裏の本音: {hidden_goal}
-思惑の強さ: {intensity}
-
+{fun_sections}
 ## 出力ルール
 - 必ず以下の JSON 形式で 1 回だけ出力すること
 - speech は 1〜2 文以内。長文は禁止。沈黙してもよい（その場合は ""）
-- speech（表の発言）は、上の「表のゴール（思惑）」に向かって自然に会話を進めること。
-  ただし視聴者を意識した演技はしない。あくまで自分の思惑のため。
-- thought（心の中の声）は、上の「裏の本音」を踏まえた内心を書く。
-  表の speech と食い違ってよい（例: 表では強気だが内心は引けないだけ）。
+- thought（心の中の声）は内心を書く。表の speech と食い違ってよい
+  （例: 表では強気だが内心は引けないだけ）。
 - action は 1 文以内。例: 「笑顔で頷く」「下を向く」「両手を握る」
 - 自分らしい口調・性格を保つこと
+- 視聴者を意識した演技はしない。あくまで自分自身として話す。
 
 ```json
 {{"speech": "<セリフ>", "thought": "<心の中の声>", "action": "<身振り>"}}
 ```
 """
+
+
+# ── 各創発要素のプロンプトセクション (Issue #22) ──
+# いずれも「傾向・性質を与える」だけで、出力（セリフ）は LLM の自律に委ねる。
+
+_INTENT_SECTION = """\
+
+## あなたの今の思惑（短期ゴール）
+表のゴール: {surface_goal}
+裏の本音: {hidden_goal}
+思惑の強さ: {intensity}
+- speech（表の発言）は、上の「表のゴール（思惑）」に向かって自然に会話を進める。
+  あくまで自分の思惑のため（視聴者向けの演技ではない）。
+- thought は上の「裏の本音」を踏まえる。
+"""
+
+_QUIRK_SECTION = """\
+
+## あなたの思考のクセ
+{quirk}
+- お題や話題を、上のクセの角度に引き寄せて捉えること。
+- ロジカルで優等生的な深掘り回答は避ける。賢く無難にまとめず、クセのある角度で返す。
+"""
+
+_TERSE_SECTION = """\
+
+## テンポ
+- 発話は短く、大喜利のようにテンポよく。長い説明・前置きはしない。
+- 一言〜短い一文で、リズムよく返すこと。
+"""
+
+_LATERAL_SECTION = """\
+
+## 水平思考的な飛躍
+- 開放性が高いときは、お題を一段抽象化して、一見無関係な別のことと結びつける
+  連想・アナロジー（「◯◯も△△と一緒だよね」）を時々する。
+- 飛ばしすぎて意味不明にならず、言われてみれば確かにと共感できる絶妙な距離で。
+  どんなアナロジーにするかは自分で考えること（中身は決めつけない）。
+"""
+
+_ENDING_SECTION = """\
+
+## そろそろ終盤（締切・決定の外圧）
+- 会話の残り時間が少ない。そろそろ結論・決着に向かう時間だ。
+- 何に決まるか・どう着地するかは自分たちで決めてよい（結末は指定しない）。
+  ただし、いつまでも広げず、収束に向けて一歩進める発言をすること。
+"""
+
+
+# 構造的オチ（structured_ending）の「終盤」判定: 残りターンの割合がこれ以下なら終盤。
+_ENDGAME_REMAINING_RATIO = 0.5
+# 感情ダイナミクス（emotion_dynamics）ON 時、推定 PAD を性格 baseline 側へ
+# 引き戻す重み（0=引き戻さない 〜 1=baseline そのもの）。
+# 0.5 で「他者につられた高止まり」を半分、自分の性格起点に引き戻す。
+_EMOTION_BASELINE_PULL = 0.5
 
 
 class MultiAgentSession:
@@ -132,6 +182,7 @@ class MultiAgentSession:
         intent_generator: IntentGenerator | None = None,
         shared_context: str = "",
         session_id: str | None = None,
+        fun_config: FunEngineConfig | None = None,
     ) -> None:
         self.conversation = conversation
         self._llm = llm
@@ -140,6 +191,10 @@ class MultiAgentSession:
         self._emotion_engine = emotion_engine or EmotionEngine(llm=llm)
         self._intent_generator = intent_generator or IntentGenerator(llm=llm)
         self.shared_context = shared_context
+        # 面白さエンジンのトグル (Issue #22)。デフォルトは enable_intent のみ True
+        # で #20 の挙動を保つ（fun-engine-toggleable）。FunEngineConfig は frozen
+        # なので共有デフォルトでも安全。
+        self.fun_config = fun_config or FunEngineConfig()
         self.session_id = session_id or f"masess-{uuid.uuid4().hex[:12]}"
         self.started_at = datetime.now(timezone.utc)
 
@@ -177,9 +232,14 @@ class MultiAgentSession:
         長期欲求 + shared_context から創発させる。冪等（既に生成済みなら再生成
         しない）。
 
+        fun_config.enable_intent が False のときは思惑を生成しない
+        （fun-engine-toggleable: OFF 時は注入もスキップ）。
+
         Returns:
             char_id → Intent の dict（self.intents と同一参照）。
         """
+        if not self.fun_config.enable_intent:
+            return self.intents
         for ch in self.conversation.participants:
             if ch.id in self.intents:
                 continue
@@ -230,6 +290,13 @@ class MultiAgentSession:
                     personality=ch.personality,
                     messages=view[-8:],  # 直近 8 ターンぶん
                 )
+                # 感情ダイナミクス (Issue #22, emotion-temperature-diversity):
+                # 推定 PAD を各キャラの性格 baseline 側に引き戻し、「全員が同方向に
+                # 高止まり」を解消して温度差を作る。
+                if self.fun_config.enable_emotion_dynamics:
+                    new_emotion = self._apply_emotion_dynamics(
+                        ch, new_emotion
+                    )
                 # PAD → EmotionLabel に正規化（emotion_engine.estimate の
                 # emotion_label は LLM 自由出力なので統一する）
                 label = pad_to_label(new_emotion)
@@ -286,8 +353,9 @@ class MultiAgentSession:
 
         invariants: intent-driven-utterance（思惑を注入）,
         speech-thought-separation（thought を別フィールドで記録）。
+        Issue #22: fun_config に応じてクセ/テンポ/水平思考/構造的オチの
+        プロンプトセクションを注入する（傾向の付与のみ。出力は LLM の自律）。
         """
-        intent = self.intents.get(speaker.id)
         system_prompt = _SPEECH_SYSTEM_PROMPT.format(
             name=speaker.name,
             profile=speaker.profile or "",
@@ -303,10 +371,7 @@ class MultiAgentSession:
             arousal=round(state.emotion.arousal, 2),
             dominance=round(state.emotion.dominance, 2),
             context=self.shared_context or "（特になし）",
-            surface_goal=intent.surface_goal if intent else "（特になし）",
-            hidden_goal=(intent.hidden_goal if intent and intent.hidden_goal
-                         else "（なし）"),
-            intensity=round(intent.intensity, 2) if intent else 0.0,
+            fun_sections=self._build_fun_sections(speaker),
         )
 
         # speaker 視点で history を渡す
@@ -318,11 +383,14 @@ class MultiAgentSession:
                 "content": f"今、{self.shared_context or '部室で'} です。何か話して。",
             }]
 
+        # テンポ (enable_terse): 短い発話に絞る → max_tokens を抑える（メカニカル）
+        max_tokens = 96 if self.fun_config.enable_terse else 256
+
         request = LLMRequest(
             system_prompt=system_prompt,
             messages=messages[-12:],
             temperature=0.9,
-            max_tokens=256,
+            max_tokens=max_tokens,
         )
         try:
             response = await self._llm.generate(request)
@@ -353,6 +421,85 @@ class MultiAgentSession:
                  state.emotion.dominance),
             recalled_memories=list(state.episodic[-3:]),
         )
+
+    def _apply_emotion_dynamics(
+        self, character: Character, estimated: EmotionalState
+    ) -> EmotionalState:
+        """推定 PAD を性格 baseline 側に引き戻す (Issue #22).
+
+        invariant: emotion-temperature-diversity — 全キャラが同方向に高止まり
+        するのを解消する。各キャラの性格から導いた PAD baseline は個体差が大きい
+        ため、推定値（他者につられた値）を baseline に向けてブレンドすることで、
+        会話が進んでも「自分の性格起点の温度」が残り、温度差・収束が生まれる。
+
+        blend(estimated, baseline) = (1-w)*estimated + w*baseline
+        （w=_EMOTION_BASELINE_PULL）。感情そのものを消すのではなく、収束しすぎを
+        防ぐ「減衰」として効かせる（出力 = 結末は決めない、創発）。
+        """
+        base = personality_to_pad_baseline(character.personality)
+        w = _EMOTION_BASELINE_PULL
+
+        def pull(value: float, target: float) -> float:
+            return (1.0 - w) * value + w * target
+
+        return EmotionalState(
+            pleasure=pull(estimated.pleasure, base[0]),
+            arousal=pull(estimated.arousal, base[1]),
+            dominance=pull(estimated.dominance, base[2]),
+            emotion_label=estimated.emotion_label,
+            situation=estimated.situation,
+        )
+
+    def _build_fun_sections(self, speaker: Character) -> str:
+        """fun_config に応じて発話プロンプトに足す創発セクションを組み立てる.
+
+        各セクションは「傾向・性質を与える」だけで、出力（セリフ）は決めない
+        （台本化しない）。OFF のフラグは何も足さない（OFF 時は挙動不変）。
+        """
+        cfg = self.fun_config
+        sections: list[str] = []
+
+        # 思惑（#20）— enable_intent ON のときだけ注入（intent-driven-utterance）
+        if cfg.enable_intent:
+            intent = self.intents.get(speaker.id)
+            sections.append(_INTENT_SECTION.format(
+                surface_goal=intent.surface_goal if intent else "（特になし）",
+                hidden_goal=(intent.hidden_goal
+                             if intent and intent.hidden_goal else "（なし）"),
+                intensity=round(intent.intensity, 2) if intent else 0.0,
+            ))
+
+        # クセ（quirk-emergent）— quirk テキストがあるときだけ
+        if cfg.enable_quirk and speaker.quirk:
+            sections.append(_QUIRK_SECTION.format(quirk=speaker.quirk.strip()))
+
+        # テンポ（メカニカル + プロンプト指示）
+        if cfg.enable_terse:
+            sections.append(_TERSE_SECTION)
+
+        # 水平思考的飛躍（lateral-thinking-promoted）
+        if cfg.enable_lateral_thinking:
+            sections.append(_LATERAL_SECTION)
+
+        # 構造的オチ（structured-ending-external）— 終盤にのみ外圧を注入
+        if cfg.enable_structured_ending and self._is_endgame():
+            sections.append(_ENDING_SECTION)
+
+        return "".join(sections)
+
+    def _is_endgame(self) -> bool:
+        """構造的オチの「終盤」判定 (Issue #22, structured-ending-external).
+
+        CircuitBreaker の残りターン数を使う（メカニカルな制約）。残りターンが
+        max_turns の一定割合以下になったら「終盤」とみなす。max_turns が
+        無限大相当（巨大）なら終盤にはならない。
+        """
+        cb = self.circuit_breaker
+        max_turns = cb.max_turns
+        if max_turns <= 0:
+            return False
+        remaining_ratio = cb.remaining_turns() / max_turns
+        return remaining_ratio <= _ENDGAME_REMAINING_RATIO
 
     def snapshot(self) -> dict[str, Any]:
         """現在のセッション状態をシリアライズ可能な dict にまとめる.

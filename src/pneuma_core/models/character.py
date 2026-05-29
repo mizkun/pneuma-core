@@ -27,3 +27,7 @@ class Character:
     # 長期欲求（根底で求めているもの）。思惑エンジン (Issue #20) が短期ゴール
     # を創発させる素地。YAML の desires フィールドから読み込む。
     desires: str | None = None
+    # 思考のクセ（思考の歪み）。面白さエンジン (Issue #22) の enable_quirk が
+    # ON のとき発話プロンプトに注入し「お題を自分のクセに引き寄せる」を促す。
+    # セリフは台本化せず、適用は LLM の自律に委ねる（quirk-emergent）。
+    quirk: str = ""

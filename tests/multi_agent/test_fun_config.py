@@ -167,7 +167,8 @@ async def test_default_config_runs_turn_like_before() -> None:
 @pytest.mark.asyncio
 async def test_default_intent_enabled_injects_intent() -> None:
     """AC-2: デフォルト（enable_intent True）では思惑が生成される（#20 挙動不変）."""
-    chars = [_make_char("a", "なでしこ", extraversion=0.9)]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9),
+             _make_char("b", "千明", extraversion=0.3)]
     session = _session(chars, FunEngineConfig())
     await session.ensure_intents()
     assert "a" in session.intents
@@ -177,7 +178,8 @@ async def test_default_intent_enabled_injects_intent() -> None:
 @pytest.mark.asyncio
 async def test_intent_disabled_skips_intent_generation() -> None:
     """AC-1: enable_intent False で思惑生成がスキップされる（思惑非注入）."""
-    chars = [_make_char("a", "なでしこ", extraversion=0.9)]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9),
+             _make_char("b", "千明", extraversion=0.3)]
     session = _session(chars, FunEngineConfig(enable_intent=False))
     await session.ensure_intents()
     assert session.intents == {}
@@ -196,7 +198,8 @@ async def test_intent_disabled_skips_intent_generation() -> None:
 async def test_quirk_off_does_not_inject_quirk() -> None:
     """AC-3: enable_quirk False のとき quirk は発話プロンプトに入らない."""
     chars = [_make_char("a", "千明", extraversion=0.9,
-                        quirk="何でも勝負・競争に変換して考える")]
+                        quirk="何でも勝負・競争に変換して考える"),
+             _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
     session = _session(chars, FunEngineConfig(), llm=llm)
     await session.run_turn()
@@ -209,7 +212,8 @@ async def test_quirk_on_injects_quirk_into_prompt() -> None:
     """AC-3: enable_quirk True で quirk が発話プロンプトに注入され、
     『クセに引き寄せる』『優等生回答を避ける』が促される（出力は委ねる）."""
     chars = [_make_char("a", "千明", extraversion=0.9,
-                        quirk="何でも勝負・競争に変換して考える")]
+                        quirk="何でも勝負・競争に変換して考える"),
+             _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
     session = _session(chars, FunEngineConfig(enable_quirk=True), llm=llm)
     await session.run_turn()
@@ -223,7 +227,8 @@ async def test_quirk_on_injects_quirk_into_prompt() -> None:
 @pytest.mark.asyncio
 async def test_quirk_on_without_quirk_text_is_noop() -> None:
     """AC-3: quirk 未設定キャラは enable_quirk ON でも壊れない."""
-    chars = [_make_char("a", "なでしこ", extraversion=0.9, quirk="")]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9, quirk=""),
+             _make_char("b", "あおい", extraversion=0.3, quirk="")]
     session = _session(chars, FunEngineConfig(enable_quirk=True))
     result = await session.run_turn()
     assert result is not None
@@ -235,7 +240,8 @@ async def test_quirk_on_without_quirk_text_is_noop() -> None:
 @pytest.mark.asyncio
 async def test_terse_off_keeps_default_max_tokens() -> None:
     """AC-4: enable_terse False のとき従来の max_tokens が使われる."""
-    chars = [_make_char("a", "なでしこ", extraversion=0.9)]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9),
+             _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
     session = _session(chars, FunEngineConfig(), llm=llm)
     await session.run_turn()
@@ -252,7 +258,8 @@ async def test_terse_off_keeps_default_max_tokens() -> None:
 @pytest.mark.asyncio
 async def test_terse_on_injects_short_instruction() -> None:
     """AC-4: enable_terse True で『短く・大喜利的に』がプロンプトに入る."""
-    chars = [_make_char("a", "なでしこ", extraversion=0.9)]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9),
+             _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
     session = _session(chars, FunEngineConfig(enable_terse=True), llm=llm)
     await session.run_turn()
@@ -267,7 +274,8 @@ async def test_terse_on_injects_short_instruction() -> None:
 @pytest.mark.asyncio
 async def test_lateral_off_does_not_promote_analogy() -> None:
     """AC-5: enable_lateral_thinking False のとき連想プロンプトは入らない."""
-    chars = [_make_char("a", "なでしこ", extraversion=0.9, openness=0.9)]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9, openness=0.9),
+             _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
     session = _session(chars, FunEngineConfig(), llm=llm)
     await session.run_turn()
@@ -278,7 +286,8 @@ async def test_lateral_off_does_not_promote_analogy() -> None:
 @pytest.mark.asyncio
 async def test_lateral_on_promotes_analogy_for_high_openness() -> None:
     """AC-5: openness が高いキャラに連想・アナロジーが促される（中身は自律）."""
-    chars = [_make_char("a", "なでしこ", extraversion=0.9, openness=0.9)]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9, openness=0.9),
+             _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
     session = _session(
         chars, FunEngineConfig(enable_lateral_thinking=True), llm=llm
@@ -329,17 +338,21 @@ async def test_emotion_dynamics_pulls_toward_personality_baseline() -> None:
     base_hot = personality_to_pad_baseline(hot.personality)
     base_cool = personality_to_pad_baseline(cool.personality)
 
-    # ON は各キャラの baseline pleasure に OFF より近い（引き戻し）
+    # baseline 差が出ている前提（性格を極端にしているので温度差の源がある）
+    assert abs(base_hot[0] - base_cool[0]) > 0.05
+
+    # OFF/ON は同じ mock seed なので OFF の値が「素の推定値（他者につられた値）」。
+    # ON はそれを各キャラの baseline に向けて 50% ブレンド（引き戻し = 減衰）する。
+    # → 推定値を直接 baseline 側へ動かす式が効いていることを決定論的に確認。
+    w = 0.5
+    expected_on_hot = (1 - w) * off_hot.pleasure + w * base_hot[0]
+    expected_on_cool = (1 - w) * off_cool.pleasure + w * base_cool[0]
+    assert on_hot.pleasure == pytest.approx(expected_on_hot, abs=1e-6)
+    assert on_cool.pleasure == pytest.approx(expected_on_cool, abs=1e-6)
+
+    # ON は各キャラの baseline pleasure に OFF より近い（高止まり解消の本質）
     assert abs(on_hot.pleasure - base_hot[0]) <= abs(off_hot.pleasure - base_hot[0])
     assert abs(on_cool.pleasure - base_cool[0]) <= abs(off_cool.pleasure - base_cool[0])
-
-    # ON では 2 体の pleasure 差が baseline の差に近づく（温度差が生まれる）
-    on_spread = abs(on_hot.pleasure - on_cool.pleasure)
-    base_spread = abs(base_hot[0] - base_cool[0])
-    # baseline 差が出ている前提（性格を極端にしている）
-    assert base_spread > 0.05
-    # ON の温度差は baseline 差の一定割合以上を保持している
-    assert on_spread >= base_spread * 0.3
 
 
 # ─────────────────────── AC-7: structured ending ───────────────────────
@@ -348,7 +361,8 @@ async def test_emotion_dynamics_pulls_toward_personality_baseline() -> None:
 @pytest.mark.asyncio
 async def test_structured_ending_off_no_closure_prompt() -> None:
     """AC-7: enable_structured_ending False では終盤でも収束指示が入らない."""
-    chars = [_make_char("a", "なでしこ", extraversion=0.9)]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9),
+             _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
     cb = CircuitBreaker(CircuitBreakerConfig(max_turns=2))
     session = _session(chars, FunEngineConfig(), llm=llm, circuit_breaker=cb)
@@ -365,22 +379,23 @@ async def test_structured_ending_injects_closure_only_in_endgame() -> None:
 
     序盤（残りターン多い）では収束指示は入らない。
     """
-    chars = [_make_char("a", "なでしこ", extraversion=0.9)]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9),
+             _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
-    # max_turns=4: 序盤(turn1,2)は通常、終盤(turn3,4)で収束指示
+    # max_turns=4: 序盤(turn1)は通常、終盤(turn>=2)で収束指示
     cb = CircuitBreaker(CircuitBreakerConfig(max_turns=4))
     session = _session(
         chars, FunEngineConfig(enable_structured_ending=True),
         llm=llm, circuit_breaker=cb,
     )
-    # turn 1（序盤）: 収束指示なし
+    # turn 1（序盤: 残り 3/4）: 収束指示なし
     await session.run_turn()
     early_sp = llm.last_chat_request.system_prompt
     assert "決着" not in early_sp and "結論" not in early_sp
 
     # 終盤まで進める
-    await session.run_turn()  # turn 2
-    await session.run_turn()  # turn 3（終盤）
+    await session.run_turn()  # turn 2（残り 2/4 = 0.5）
+    await session.run_turn()  # turn 3（残り 1/4 = 0.25、終盤）
     late_sp = llm.last_chat_request.system_prompt
     assert "決着" in late_sp or "結論" in late_sp
 
@@ -388,14 +403,15 @@ async def test_structured_ending_injects_closure_only_in_endgame() -> None:
 @pytest.mark.asyncio
 async def test_structured_ending_requires_circuit_breaker_turn_budget() -> None:
     """AC-7: 終盤判定は CircuitBreaker の残りターン数で行う（メカニカル）."""
-    chars = [_make_char("a", "なでしこ", extraversion=0.9)]
+    chars = [_make_char("a", "なでしこ", extraversion=0.9),
+             _make_char("b", "あおい", extraversion=0.3)]
     llm = RecordingMockLLM(seed=1)
     cb = CircuitBreaker(CircuitBreakerConfig(max_turns=2))
     session = _session(
         chars, FunEngineConfig(enable_structured_ending=True),
         llm=llm, circuit_breaker=cb,
     )
-    # max_turns=2: turn1 ですでに終盤（残り 1）→ 収束指示が入る
+    # max_turns=2: turn1 ですでに終盤（残り 1/2 = 0.5）→ 収束指示が入る
     await session.run_turn()
     assert "決着" in llm.last_chat_request.system_prompt or \
         "結論" in llm.last_chat_request.system_prompt

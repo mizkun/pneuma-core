@@ -33,6 +33,7 @@ from pneuma_core.multi_agent.circuit_breaker import (
     CircuitBreakerConfig,
 )
 from pneuma_core.multi_agent.conversation import Conversation
+from pneuma_core.multi_agent.fun_config import FunEngineConfig
 from pneuma_core.multi_agent.mock_llm import MockLLMAdapter
 from pneuma_core.multi_agent.session import MultiAgentSession
 from pneuma_core.multi_agent.session_end import MultiAgentSessionEndPipeline
@@ -59,12 +60,17 @@ async def run(
     loop_delay_seconds: float = 0.5,
     save_log: bool = True,
     log_dir: str = ".vibe/references",
+    fun_config: FunEngineConfig | None = None,
 ) -> int:
     """テキストランナー本体.
 
     save_log=True のとき、会話トランスクリプトを log_dir に Markdown 保存する
     (Issue #7 Phase0-C2 の AC「実行ログを保存」)。
+
+    fun_config で面白さエンジンの各トグル (Issue #22) を指定する。None なら
+    デフォルト（enable_intent のみ True）= #20 の挙動。
     """
+    fun_config = fun_config or FunEngineConfig()
     llm, llm_label = _build_llm(use_mock)
     sheets = load_yurucamp_sheets()
     chars = [s.character for s in sheets]
@@ -80,6 +86,7 @@ async def run(
         llm=llm,
         shared_context=context,
         circuit_breaker=cb,
+        fun_config=fun_config,
     )
 
     # print と同時にトランスクリプトへ収集する emit ヘルパー
@@ -95,20 +102,26 @@ async def run(
     emit("# Cast  : " + " / ".join(c.name for c in chars))
     emit(f"# Ctx   : {context}")
     emit(f"# Limit : {turn_limit} turns or {duration_minutes:.1f} min")
+    on_flags = [
+        name.removeprefix("enable_")
+        for name, val in vars(fun_config).items() if val
+    ]
+    emit(f"# Fun   : {', '.join(on_flags) if on_flags else '(none)'}")
     emit("=" * 70)
 
     # ──── 思惑（短期ゴール）の生成と表示 (Issue #20) ────
     await session.ensure_intents()
-    emit("\n# 思惑（短期ゴール）— 長期欲求 + 状況から創発")
-    for ch in chars:
-        intent = session.intents.get(ch.id)
-        if intent is None:
-            continue
-        hidden = intent.hidden_goal or "（なし）"
-        emit(
-            f"  {ch.name:<8} 思惑(表): {intent.surface_goal}\n"
-            f"  {'':<8} 本音(裏): {hidden}  [強さ={intent.intensity:.2f}]"
-        )
+    if fun_config.enable_intent:
+        emit("\n# 思惑（短期ゴール）— 長期欲求 + 状況から創発")
+        for ch in chars:
+            intent = session.intents.get(ch.id)
+            if intent is None:
+                continue
+            hidden = intent.hidden_goal or "（なし）"
+            emit(
+                f"  {ch.name:<8} 思惑(表): {intent.surface_goal}\n"
+                f"  {'':<8} 本音(裏): {hidden}  [強さ={intent.intensity:.2f}]"
+            )
 
     started = time.monotonic()
     while True:
@@ -210,7 +223,6 @@ async def run(
 
     # ──── ログ保存 ────
     if save_log:
-        from datetime import datetime, timezone
         from pathlib import Path
 
         out_dir = Path(log_dir)
@@ -242,11 +254,37 @@ def main() -> None:
                         help="Disable saving the transcript to .vibe/references/")
     parser.add_argument("--log-dir", type=str, default=".vibe/references",
                         help="Directory to save transcript log (default: .vibe/references)")
+
+    # ──── 面白さエンジンのトグル (Issue #22) ────
+    # 指定しなければデフォルト（intent のみ）= #20 の挙動。
+    fun = parser.add_argument_group("fun engine toggles (Issue #22)")
+    fun.add_argument("--no-intent", action="store_true",
+                     help="思惑（#20）を無効化する（デフォルトは有効）")
+    fun.add_argument("--quirk", action="store_true",
+                     help="キャラの思考のクセを発話に注入する")
+    fun.add_argument("--terse", action="store_true",
+                     help="発話を短く・大喜利的にする（テンポ）")
+    fun.add_argument("--lateral", action="store_true",
+                     help="水平思考的飛躍（連想・アナロジー）を促す")
+    fun.add_argument("--emotion-dynamics", action="store_true",
+                     help="感情を性格 baseline に引き戻し温度差を作る")
+    fun.add_argument("--structured-ending", action="store_true",
+                     help="終盤に締切/決定の外圧で収束を促す（構造的オチ）")
+
     parser.add_argument("-v", "--verbose", action="store_true")
 
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
+
+    fun_config = FunEngineConfig(
+        enable_intent=not args.no_intent,
+        enable_quirk=args.quirk,
+        enable_terse=args.terse,
+        enable_lateral_thinking=args.lateral,
+        enable_emotion_dynamics=args.emotion_dynamics,
+        enable_structured_ending=args.structured_ending,
+    )
 
     try:
         rc = asyncio.run(run(
@@ -257,6 +295,7 @@ def main() -> None:
             loop_delay_seconds=args.loop_delay,
             save_log=not args.no_save_log,
             log_dir=args.log_dir,
+            fun_config=fun_config,
         ))
     except KeyboardInterrupt:
         print("\n^C interrupted", file=sys.stderr)

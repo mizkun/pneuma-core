@@ -73,6 +73,11 @@ class CircuitBreaker:
     def token_count(self) -> int:
         return self._token_count
 
+    @property
+    def max_turns(self) -> int:
+        """1 セッションのターン上限（構造的オチの終盤判定などに使う）."""
+        return self._config.max_turns
+
     def remaining_turns(self) -> int:
         return max(0, self._config.max_turns - self._turn_count)
 
