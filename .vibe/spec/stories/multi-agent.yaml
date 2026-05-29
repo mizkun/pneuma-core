@@ -48,6 +48,42 @@ invariants:
       視聴者は thought を観測できる（会話相手には見えない）。
     source_ref: src/pneuma_core/multi_agent/session.py:MultiAgentSession
     test: tests/multi_agent/test_intent.py
+  - id: fun-engine-toggleable
+    text: |
+      面白さの各創発要素（思惑/クセ/テンポ/水平思考/感情ダイナミクス/構造的オチ）は
+      FunEngineConfig で独立に ON/OFF でき、OFF 時は既存挙動を変えない。デフォルトは
+      enable_intent のみ True で #20 の挙動を保つ。各要素は出力（セリフ/展開/結末）を
+      決める台本ではなく、傾向・性質（入力）をプロンプト/挙動に与える創発として実装する。
+    source_ref: src/pneuma_core/multi_agent/fun_config.py:FunEngineConfig
+    test: tests/multi_agent/test_fun_config.py
+  - id: quirk-emergent
+    text: |
+      キャラのクセ（思考の歪み）は character.yaml の quirk（思考傾向）として与えられ、
+      enable_quirk ON 時に発話プロンプトへ注入される。「お題を自分のクセに引き寄せる」
+      「優等生的な深掘り回答を避ける」を促すが、セリフは台本化せず適用は LLM の自律。
+    source_ref: src/pneuma_core/multi_agent/session.py:_build_fun_sections
+    test: tests/multi_agent/test_fun_config.py
+  - id: lateral-thinking-promoted
+    text: |
+      水平思考的飛躍（連想・アナロジー）は enable_lateral_thinking ON 時にプロンプトで
+      促されるが、どんなアナロジーにするか（中身）は LLM が自律生成する。台本化しない。
+    source_ref: src/pneuma_core/multi_agent/session.py:_build_fun_sections
+    test: tests/multi_agent/test_fun_config.py
+  - id: emotion-temperature-diversity
+    text: |
+      enable_emotion_dynamics ON 時、推定 PAD を各キャラの性格 baseline 側へブレンドして
+      引き戻し、全キャラが同方向に高止まり（収束）するのを解消して温度差を作る。baseline は
+      性格ごとに異なるため、会話が進んでも自分の性格起点の温度が残る。
+    source_ref: src/pneuma_core/multi_agent/session.py:_apply_emotion_dynamics
+    test: tests/multi_agent/test_fun_config.py
+  - id: structured-ending-external
+    text: |
+      構造的オチは enable_structured_ending ON 時、「締切/決定の強制」という外圧（入力）
+      として与えられる。CircuitBreaker の残りターン比率で「終盤」を判定し、終盤にのみ
+      「そろそろ結論・決着に向かう」をプロンプト注入して収束を促す。結末そのもの（何に
+      決まるか）は台本化せず LLM の自律に委ねる。
+    source_ref: src/pneuma_core/multi_agent/session.py:_is_endgame
+    test: tests/multi_agent/test_fun_config.py
 source_files:
   - src/pneuma_core/
 depends_on:
