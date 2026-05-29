@@ -63,3 +63,6 @@ yarn-error.log*
 .akasha/fidelity/
 # multi-agent trial transcripts (実行ログ、判定用、git 管理外)
 .vibe/references/text-runner-trial-*.md
+
+# multi-agent 検証セッションのログ群（実行ログ、解析用、git 管理外）
+.vibe/references/trial*/

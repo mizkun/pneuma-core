@@ -42,6 +42,7 @@ from pneuma_core.multi_agent.circuit_breaker import (
     CircuitState,
 )
 from pneuma_core.multi_agent.conversation import Conversation
+from pneuma_core.multi_agent.fun_config import FunEngineConfig
 from pneuma_core.multi_agent.mock_llm import MockLLMAdapter
 from pneuma_core.multi_agent.session import MultiAgentSession, TurnResult
 from pneuma_core.multi_agent.session_end import MultiAgentSessionEndPipeline
@@ -66,6 +67,7 @@ class SessionDriver:
         turn_limit_per_session: int = 50,
         inter_turn_seconds: float = 2.5,
         inter_session_seconds: float = 8.0,
+        fun_config: FunEngineConfig | None = None,
     ) -> None:
         self._llm = llm
         self._llm_label = llm_label
@@ -74,6 +76,7 @@ class SessionDriver:
         self._turn_limit_per_session = turn_limit_per_session
         self._inter_turn_seconds = inter_turn_seconds
         self._inter_session_seconds = inter_session_seconds
+        self._fun_config = fun_config or FunEngineConfig()
 
         self._subscribers: list[queue.Queue] = []
         self._lock = threading.Lock()
@@ -201,6 +204,7 @@ class SessionDriver:
             llm=self._llm,
             shared_context=self._context,
             circuit_breaker=cb,
+            fun_config=self._fun_config,
         )
         self._current_session = session
         # apply initial emotions from sheets
@@ -827,11 +831,33 @@ def main() -> None:
                         help="Seconds between turns (default: 2.5)")
     parser.add_argument("--inter-session", type=float, default=8.0,
                         help="Seconds between sessions (default: 8.0)")
+    # 面白さエンジンのトグル (Issue #22) — text_runner と同じ
+    parser.add_argument("--no-intent", action="store_true",
+                        help="思惑（#20）を無効化する（デフォルトは有効）")
+    parser.add_argument("--quirk", action="store_true",
+                        help="キャラの思考のクセを発話に注入する")
+    parser.add_argument("--terse", action="store_true",
+                        help="発話を短く・大喜利的にする（テンポ）")
+    parser.add_argument("--lateral", action="store_true",
+                        help="水平思考的飛躍（連想・アナロジー）を促す")
+    parser.add_argument("--emotion-dynamics", action="store_true",
+                        help="感情を性格 baseline に引き戻し温度差を作る")
+    parser.add_argument("--structured-ending", action="store_true",
+                        help="終盤に締切/決定の外圧で収束を促す（構造的オチ）")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
     if args.verbose:
         logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
+
+    fun_config = FunEngineConfig(
+        enable_intent=not args.no_intent,
+        enable_quirk=args.quirk,
+        enable_terse=args.terse,
+        enable_lateral_thinking=args.lateral,
+        enable_emotion_dynamics=args.emotion_dynamics,
+        enable_structured_ending=args.structured_ending,
+    )
 
     llm, llm_label = _build_llm(args.use_mock_llm)
     driver = SessionDriver(
@@ -842,6 +868,7 @@ def main() -> None:
         turn_limit_per_session=args.turn_limit,
         inter_turn_seconds=args.inter_turn,
         inter_session_seconds=args.inter_session,
+        fun_config=fun_config,
     )
 
     print("=" * 60)
