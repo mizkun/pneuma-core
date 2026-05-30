@@ -37,6 +37,15 @@ Pneuma の**本体（記憶を引き継いで長期に育つ「1本の正史」�
    - **Values 対立軸（self_transcendence vs self_enhancement を最低1本）= 実験が成立する前提**（同じ介入に答えが割れる）
    - 名前/出自/Big Five/関係性/口調/quirk
    - 世界観の方向性（部活の種類 / 性別構成 / トーン）が決まれば Iris が叩き台を作れる
+
+   **キャラ作成ツール（PO が使う、2026-05-30 決定）**:
+   - **つむぎ** https://gist.github.com/ponapalt/8f2e1d6b46a6510edf1ab2a59730940f — 約30問で芯を深掘り（価値観/恐怖/自己認識/対人）。★Values 対立軸の素材になる最重要ツール
+   - **ひなた** https://gist.github.com/ponapalt/5fc1f7ccbb88977617e6c6c9bcdbcea1 — 高速生成（口調/セリフ例/関係性/開始セリフ）。表層づくり
+   - **分業**: PO が つむぎ/ひなた でキャラの魂（価値観・恐怖・口調・関係性）を作る → Iris が Pneuma 形式に変換する:
+     - 価値観（譲れない/許せない）→ Values(Schwartz) + desires。★**3人で self_transcendence vs self_enhancement が割れるよう配置**
+     - 性格描写 → Big Five / 口調 → speaking_style / 思考の癖 → quirk / 信頼・距離感 → 初期 relations(closeness/trust)
+   - 変換後、実機 trial で「同じ介入に答えが割れるか」を確認
+   - **新セッションでの再開合言葉**: 「STATUS 読んで。つむぎ/ひなたで作った設定を渡すから Pneuma の character.yaml にして。3人の Values 対立を担保して」
 2. **Anthropic 月 hard cap 設定**（$50〜100、コスト事故防止。Iris 不可）
 3. 最初の実験テーマ（レビュー推奨「特定話題への自発到達」）/ 配信モード（録画推奨）/ 音声要否
 
